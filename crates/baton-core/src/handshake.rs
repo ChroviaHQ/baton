@@ -6,7 +6,7 @@ use base64::engine::general_purpose::STANDARD;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::address::TargetAddr;
-use crate::config::{Hop, ProxyKind};
+use crate::config::{Hop, ProxyProtocol};
 
 const MAX_RESPONSE_HEAD: usize = 8 * 1024;
 
@@ -36,9 +36,9 @@ pub async fn connect_via<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    match hop.kind {
-        ProxyKind::Http => http_connect(stream, target, hop.credentials()).await,
-        ProxyKind::Socks5 => socks5_connect(stream, target, hop.credentials()).await,
+    match hop.protocol {
+        ProxyProtocol::Http => http_connect(stream, target, hop.credentials()).await,
+        ProxyProtocol::Socks5 => socks5_connect(stream, target, hop.credentials()).await,
     }
 }
 
@@ -100,11 +100,8 @@ async fn socks5_connect<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let greeting: &[u8] = if credentials.is_some() {
-        &[0x05, 0x02, 0x00, 0x02]
-    } else {
-        &[0x05, 0x01, 0x00]
-    };
+    let greeting: &[u8] =
+        if credentials.is_some() { &[0x05, 0x02, 0x00, 0x02] } else { &[0x05, 0x01, 0x00] };
     stream.write_all(greeting).await?;
 
     let mut choice = [0u8; 2];

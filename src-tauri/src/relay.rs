@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use baton_core::sysproxy::SystemProxy;
+use baton_core::system_proxy::SystemProxy;
 use baton_core::{Hop, Server, ServerConfig, StatsSnapshot};
 use serde::Serialize;
 
@@ -55,9 +55,9 @@ impl Relay {
     }
 
     pub fn recover_system_proxy(&self) {
-        if self.system_proxy.is_enabled() {
+        if self.system_proxy.is_applied() {
             tracing::warn!("restoring system proxy left over from an unclean exit");
-            if let Err(error) = self.system_proxy.disable() {
+            if let Err(error) = self.system_proxy.restore() {
                 tracing::error!(%error, "cannot restore system proxy");
             }
         }
@@ -65,7 +65,7 @@ impl Relay {
 
     pub async fn start(&mut self) -> Result<(), CommandError> {
         if self.server.is_none() {
-            validate(&self.config)?;
+            validate(&self.config, false)?;
             let hops = self.resolve_hops(&self.config)?;
             self.server = Some(start_server(&self.config, hops).await?);
         }
@@ -81,7 +81,7 @@ impl Relay {
         result
     }
 
-    pub async fn update(&mut self, config: AppConfig) -> Result<(), CommandError> {
+    pub async fn apply_config(&mut self, config: AppConfig) -> Result<(), CommandError> {
         let port_changed = config.listen_port != self.config.listen_port;
         let restart = self.server.is_some()
             && (port_changed
@@ -89,13 +89,8 @@ impl Relay {
                 || config.upstream_mode != self.config.upstream_mode
                 || config.upstream != self.config.upstream
                 || config.landing != self.config.landing);
-        let hops = if restart {
-            validate(&config)?;
-            Some(self.resolve_hops(&config)?)
-        } else {
-            validate_filled(&config)?;
-            None
-        };
+        validate(&config, !restart)?;
+        let hops = restart.then(|| self.resolve_hops(&config)).transpose()?;
         config
             .save(&self.config_path)
             .map_err(|error| CommandError::new("config_save_failed", error))?;
@@ -118,14 +113,11 @@ impl Relay {
     pub fn detect_upstream(&self, listen_port: u16) -> Result<Hop, CommandError> {
         let hop = self
             .system_proxy
-            .original()
+            .original_proxy()
             .map_err(|error| CommandError::new("system_proxy_read_failed", error))?
             .ok_or_else(|| CommandError::new("system_proxy_not_set", "no system proxy"))?;
         if is_loopback(&hop.host) && hop.port == listen_port {
-            return Err(CommandError::new(
-                "system_proxy_is_baton",
-                "system proxy points to Baton",
-            ));
+            return Err(CommandError::new("system_proxy_is_baton", "system proxy points to Baton"));
         }
         Ok(hop)
     }
@@ -139,21 +131,21 @@ impl Relay {
     }
 
     pub fn shutdown_blocking(&mut self) {
-        if let Err(error) = self.system_proxy.disable() {
+        if let Err(error) = self.system_proxy.restore() {
             tracing::error!(%error, "cannot restore system proxy on exit");
         }
         self.server = None;
     }
 
     async fn reconcile_system_proxy(&self, port_changed: bool) -> Result<(), CommandError> {
-        let desired = self.server.is_some() && self.config.system_proxy;
-        let active = self.system_proxy.is_enabled();
+        let desired = self.server.is_some() && self.config.use_as_system_proxy;
+        let active = self.system_proxy.is_applied();
         let system_proxy = self.system_proxy.clone();
         let port = self.config.listen_port;
         let task = if desired && (!active || port_changed) {
-            tokio::task::spawn_blocking(move || system_proxy.enable("127.0.0.1", port))
+            tokio::task::spawn_blocking(move || system_proxy.apply("127.0.0.1", port))
         } else if !desired && active {
-            tokio::task::spawn_blocking(move || system_proxy.disable())
+            tokio::task::spawn_blocking(move || system_proxy.restore())
         } else {
             return Ok(());
         };
@@ -163,41 +155,17 @@ impl Relay {
     }
 }
 
-fn validate(config: &AppConfig) -> Result<(), CommandError> {
-    if config.upstream_mode == UpstreamMode::Manual {
-        config
-            .upstream
-            .validate()
-            .map_err(|error| CommandError::invalid_hop(0, error))?;
-    }
-    config
-        .landing
-        .validate()
-        .map_err(|error| CommandError::invalid_hop(1, error))?;
-    if config.listen_port == 0 {
-        return Err(CommandError::new(
-            "invalid_listen_port",
-            "listen port is zero",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_filled(config: &AppConfig) -> Result<(), CommandError> {
-    for (index, hop) in [&config.upstream, &config.landing].into_iter().enumerate() {
-        if index == 0 && config.upstream_mode == UpstreamMode::System {
-            continue;
-        }
-        if !hop.host.trim().is_empty() || hop.port != 0 {
-            hop.validate()
-                .map_err(|error| CommandError::invalid_hop(index, error))?;
+fn validate(config: &AppConfig, allow_unfilled: bool) -> Result<(), CommandError> {
+    let hops = [&config.upstream, &config.landing];
+    for (index, hop) in hops.into_iter().enumerate() {
+        let skipped = (index == 0 && config.upstream_mode == UpstreamMode::System)
+            || (allow_unfilled && hop.host.trim().is_empty() && hop.port == 0);
+        if !skipped {
+            hop.validate().map_err(|error| CommandError::invalid_hop(index, error))?;
         }
     }
     if config.listen_port == 0 {
-        return Err(CommandError::new(
-            "invalid_listen_port",
-            "listen port is zero",
-        ));
+        return Err(CommandError::new("invalid_listen_port", "listen port is zero"));
     }
     Ok(())
 }
@@ -221,11 +189,7 @@ fn lan_ip() -> Option<IpAddr> {
 async fn start_server(config: &AppConfig, hops: Vec<Hop>) -> Result<Server, CommandError> {
     Server::start(ServerConfig {
         listen: SocketAddr::from((
-            if config.allow_lan {
-                Ipv4Addr::UNSPECIFIED
-            } else {
-                Ipv4Addr::LOCALHOST
-            },
+            if config.allow_lan { Ipv4Addr::UNSPECIFIED } else { Ipv4Addr::LOCALHOST },
             config.listen_port,
         )),
         hops,
@@ -242,16 +206,12 @@ async fn start_server(config: &AppConfig, hops: Vec<Hop>) -> Result<Server, Comm
 mod tests {
     use std::net::TcpListener;
 
-    use baton_core::ProxyKind;
+    use baton_core::ProxyProtocol;
 
     use super::*;
 
     fn free_port() -> u16 {
-        TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port()
+        TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
     }
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -263,7 +223,7 @@ mod tests {
     fn configured(dir: &Path) -> Relay {
         let mut relay = Relay::new(dir);
         relay.config.landing = Hop {
-            kind: ProxyKind::Http,
+            protocol: ProxyProtocol::Http,
             host: "proxy.example.com".into(),
             port: 8080,
             ..Hop::default()
@@ -291,13 +251,10 @@ mod tests {
 
         let mut config = relay.config.clone();
         config.listen_port = free_port();
-        relay.update(config.clone()).await.unwrap();
+        relay.apply_config(config.clone()).await.unwrap();
 
         assert!(relay.status().running);
-        assert_eq!(
-            relay.server.as_ref().unwrap().local_addr().port(),
-            config.listen_port
-        );
+        assert_eq!(relay.server.as_ref().unwrap().local_addr().port(), config.listen_port);
         TcpListener::bind(("127.0.0.1", old_port)).unwrap();
         assert_eq!(AppConfig::load(&dir.join("config.json")), config);
 
@@ -323,11 +280,11 @@ mod tests {
         let mut relay = Relay::new(&dir);
         let mut config = relay.config.clone();
         config.upstream.port = 1080;
-        relay.update(config.clone()).await.unwrap();
+        relay.apply_config(config.clone()).await.unwrap();
         assert_eq!(AppConfig::load(&dir.join("config.json")), config);
 
         config.landing.host = "proxy.example.com".into();
-        let error = relay.update(config).await.unwrap_err();
+        let error = relay.apply_config(config).await.unwrap_err();
         assert_eq!(error.code, "invalid_port");
         assert_eq!(error.hop, Some(1));
 
@@ -343,7 +300,7 @@ mod tests {
         relay.start().await.unwrap();
         let mut config = relay.config.clone();
         config.landing = Hop::default();
-        let error = relay.update(config).await.unwrap_err();
+        let error = relay.apply_config(config).await.unwrap_err();
         assert_eq!(error.code, "empty_host");
         assert!(relay.status().running);
         assert_eq!(relay.config.landing.host, "proxy.example.com");
@@ -356,28 +313,12 @@ mod tests {
         let dir = temp_dir("lan");
         let mut relay = configured(&dir);
         relay.start().await.unwrap();
-        assert!(
-            relay
-                .server
-                .as_ref()
-                .unwrap()
-                .local_addr()
-                .ip()
-                .is_loopback()
-        );
+        assert!(relay.server.as_ref().unwrap().local_addr().ip().is_loopback());
 
         let mut config = relay.config.clone();
         config.allow_lan = true;
-        relay.update(config).await.unwrap();
-        assert!(
-            relay
-                .server
-                .as_ref()
-                .unwrap()
-                .local_addr()
-                .ip()
-                .is_unspecified()
-        );
+        relay.apply_config(config).await.unwrap();
+        assert!(relay.server.as_ref().unwrap().local_addr().ip().is_unspecified());
 
         relay.stop().await.unwrap();
         let _ = std::fs::remove_dir_all(&dir);
@@ -391,7 +332,7 @@ mod tests {
         config.upstream_mode = UpstreamMode::System;
         config.upstream = Hop::default();
         config.upstream.host = "half-filled".into();
-        relay.update(config).await.unwrap();
+        relay.apply_config(config).await.unwrap();
         let error = relay.start().await.unwrap_err();
         assert_eq!(error.hop, Some(1));
         let _ = std::fs::remove_dir_all(&dir);

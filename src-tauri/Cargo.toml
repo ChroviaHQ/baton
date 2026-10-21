@@ -1,6 +1,6 @@
 [package]
 name = "baton"
-description = "Chain a local upstream proxy with a landing proxy"
+description = "Desktop proxy relay that chains a local proxy with a remote landing proxy"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

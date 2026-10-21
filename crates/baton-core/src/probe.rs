@@ -12,7 +12,7 @@ use crate::address::TargetAddr;
 use crate::config::Hop;
 use crate::dial::{DialError, dial};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EgressInfo {
     pub ip: String,
@@ -33,31 +33,23 @@ pub enum ProbeError {
     Timeout,
 }
 
-struct Lookup {
+struct LookupService {
     host: &'static str,
     path: &'static str,
     normalize: fn(&Value) -> EgressInfo,
 }
 
-const LOOKUPS: &[Lookup] = &[
-    Lookup {
-        host: "ipinfo.io",
-        path: "/json",
-        normalize: normalize_ipinfo,
-    },
-    Lookup {
-        host: "api.ip2location.io",
-        path: "/",
-        normalize: normalize_ip2location,
-    },
+const LOOKUP_SERVICES: &[LookupService] = &[
+    LookupService { host: "ipinfo.io", path: "/json", normalize: normalize_ipinfo },
+    LookupService { host: "api.ip2location.io", path: "/", normalize: normalize_ip2location },
 ];
 
 pub async fn probe_egress(hops: &[Hop], timeout: Duration) -> Result<EgressInfo, ProbeError> {
     let mut last = None;
-    for lookup in LOOKUPS {
-        match tokio::time::timeout(timeout, fetch(hops, lookup)).await {
+    for service in LOOKUP_SERVICES {
+        match tokio::time::timeout(timeout, query(hops, service)).await {
             Ok(Ok(info)) => return Ok(info),
-            Ok(Err(error @ ProbeError::Dial(DialError::Connect(_)))) => return Err(error),
+            Ok(Err(error @ ProbeError::Dial(_))) => return Err(error),
             Ok(Err(error)) => last = Some(error),
             Err(_) => last = Some(ProbeError::Timeout),
         }
@@ -65,19 +57,19 @@ pub async fn probe_egress(hops: &[Hop], timeout: Duration) -> Result<EgressInfo,
     Err(last.unwrap_or(ProbeError::Timeout))
 }
 
-async fn fetch(hops: &[Hop], lookup: &Lookup) -> Result<EgressInfo, ProbeError> {
+async fn query(hops: &[Hop], service: &LookupService) -> Result<EgressInfo, ProbeError> {
     let started = Instant::now();
-    let stream = dial(hops, &TargetAddr::Domain(lookup.host.into(), 443)).await?;
+    let stream = dial(hops, &TargetAddr::Domain(service.host.into(), 443)).await?;
 
-    let server_name =
-        ServerName::try_from(lookup.host).map_err(|error| ProbeError::Lookup(error.to_string()))?;
+    let server_name = ServerName::try_from(service.host)
+        .map_err(|error| ProbeError::Lookup(error.to_string()))?;
     let mut tls = TlsConnector::from(tls_config())
         .connect(server_name, stream)
         .await
         .map_err(|error| ProbeError::Lookup(error.to_string()))?;
     let request = format!(
         "GET {} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\nUser-Agent: Baton\r\n\r\n",
-        lookup.path, lookup.host
+        service.path, service.host
     );
     tls.write_all(request.as_bytes())
         .await
@@ -93,7 +85,7 @@ async fn fetch(hops: &[Hop], lookup: &Lookup) -> Result<EgressInfo, ProbeError> 
     let body = parse_response(&response)?;
     let value: Value =
         serde_json::from_slice(body).map_err(|error| ProbeError::Lookup(error.to_string()))?;
-    let mut info = (lookup.normalize)(&value);
+    let mut info = (service.normalize)(&value);
     if info.ip.is_empty() {
         return Err(ProbeError::Lookup("response has no IP".into()));
     }
@@ -118,9 +110,7 @@ fn tls_config() -> Arc<rustls::ClientConfig> {
     static CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
     CONFIG
         .get_or_init(|| {
-            let roots = rustls::RootCertStore {
-                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-            };
+            let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
             let config = rustls::ClientConfig::builder_with_provider(Arc::new(
                 rustls::crypto::ring::default_provider(),
             ))
@@ -134,11 +124,7 @@ fn tls_config() -> Arc<rustls::ClientConfig> {
 }
 
 fn text(value: &Value, key: &str) -> String {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
+    value.get(key).and_then(Value::as_str).unwrap_or_default().to_owned()
 }
 
 fn normalize_ipinfo(value: &Value) -> EgressInfo {
@@ -183,10 +169,7 @@ mod tests {
     #[test]
     fn rejects_error_status() {
         let response = b"HTTP/1.0 429 Too Many Requests\r\n\r\n";
-        assert!(matches!(
-            parse_response(response),
-            Err(ProbeError::Lookup(_))
-        ));
+        assert!(matches!(parse_response(response), Err(ProbeError::Lookup(_))));
     }
 
     #[test]

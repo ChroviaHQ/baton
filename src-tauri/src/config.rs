@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use baton_core::{Hop, ProxyKind};
+use baton_core::{Hop, ProxyProtocol};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,15 +14,15 @@ pub enum UpstreamMode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub upstream_mode: UpstreamMode,
     pub upstream: Hop,
     pub landing: Hop,
     pub listen_port: u16,
     pub allow_lan: bool,
-    pub system_proxy: bool,
-    pub auto_connect: bool,
+    pub use_as_system_proxy: bool,
+    pub start_on_launch: bool,
     pub show_in_dock: bool,
 }
 
@@ -31,16 +31,16 @@ impl Default for AppConfig {
         Self {
             upstream_mode: UpstreamMode::Manual,
             upstream: Hop {
-                kind: ProxyKind::Socks5,
+                protocol: ProxyProtocol::Socks5,
                 host: "127.0.0.1".into(),
                 port: 7897,
                 ..Hop::default()
             },
             landing: Hop::default(),
-            listen_port: 6868,
+            listen_port: 1080,
             allow_lan: false,
-            system_proxy: false,
-            auto_connect: false,
+            use_as_system_proxy: false,
+            start_on_launch: false,
             show_in_dock: false,
         }
     }
@@ -48,17 +48,14 @@ impl Default for AppConfig {
 
 impl AppConfig {
     pub fn load(path: &Path) -> Self {
-        match fs::read(path) {
-            Ok(data) => serde_json::from_slice(&data).unwrap_or_else(|error| {
-                tracing::warn!(%error, "config is invalid; using defaults");
-                Self::default()
-            }),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Self::default(),
-            Err(error) => {
-                tracing::warn!(%error, "cannot read config; using defaults");
-                Self::default()
+        let loaded =
+            fs::read(path).and_then(|data| serde_json::from_slice(&data).map_err(io::Error::from));
+        loaded.unwrap_or_else(|error| {
+            if error.kind() != io::ErrorKind::NotFound {
+                tracing::warn!(%error, "cannot load config; using defaults");
             }
-        }
+            Self::default()
+        })
     }
 
     pub fn save(&self, path: &Path) -> io::Result<()> {

@@ -1,5 +1,5 @@
-use baton_core::sysproxy::SysProxyError;
-use baton_core::{ConfigError, DialError, HandshakeError, ProbeError};
+use baton_core::system_proxy::SystemProxyError;
+use baton_core::{DialError, HandshakeError, HopError, ProbeError};
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
@@ -12,63 +12,85 @@ pub struct CommandError {
 
 impl CommandError {
     pub fn new(code: &'static str, detail: impl ToString) -> Self {
-        Self {
-            code,
-            hop: None,
-            detail: detail.to_string(),
-        }
+        Self { code, hop: None, detail: detail.to_string() }
     }
 
-    pub fn at(mut self, hop: usize) -> Self {
+    pub fn with_hop(mut self, hop: usize) -> Self {
         self.hop = Some(hop);
         self
     }
 
-    pub fn invalid_hop(hop: usize, error: ConfigError) -> Self {
+    pub fn invalid_hop(hop: usize, error: HopError) -> Self {
         let code = match error {
-            ConfigError::EmptyHost => "empty_host",
-            ConfigError::ZeroPort => "invalid_port",
-            ConfigError::CredentialsTooLong => "credentials_too_long",
+            HopError::EmptyHost => "empty_host",
+            HopError::ZeroPort => "invalid_port",
+            HopError::CredentialsTooLong => "credentials_too_long",
         };
-        Self::new(code, error).at(hop)
+        Self::new(code, error).with_hop(hop)
     }
 }
 
-impl From<DialError> for CommandError {
-    fn from(error: DialError) -> Self {
+impl CommandError {
+    pub fn probe(error: ProbeError, hop_count: usize) -> Self {
+        match error {
+            ProbeError::Dial(error) => Self::dial(error, hop_count),
+            ProbeError::Timeout => Self::new("timeout", error),
+            ProbeError::Lookup(reason) => Self::new("lookup_failed", reason),
+        }
+    }
+
+    fn dial(error: DialError, hop_count: usize) -> Self {
         let detail = error.to_string();
         match error {
-            DialError::Empty => Self::new("empty_chain", detail),
+            DialError::NoHops => Self::new("empty_chain", detail),
             DialError::Timeout => Self::new("timeout", detail),
-            DialError::Connect(_) => Self::new("hop_unreachable", detail).at(0),
+            DialError::Unreachable(_) => Self::new("hop_unreachable", detail).with_hop(0),
             DialError::Handshake { hop, source } => {
                 let code = match source {
                     HandshakeError::AuthFailed => "auth_failed",
                     HandshakeError::AuthRequired => "auth_required",
+                    HandshakeError::HttpStatus(_) | HandshakeError::Socks5Reply(_)
+                        if hop + 1 == hop_count =>
+                    {
+                        "target_unreachable"
+                    }
                     HandshakeError::HttpStatus(_) | HandshakeError::Socks5Reply(_) => {
                         "hop_rejected"
                     }
                     HandshakeError::Io(_) | HandshakeError::Malformed => "protocol_error",
                     HandshakeError::InvalidInput(_) => "invalid_input",
                 };
-                Self::new(code, detail).at(hop)
+                Self::new(code, detail).with_hop(hop)
             }
         }
     }
 }
 
-impl From<ProbeError> for CommandError {
-    fn from(error: ProbeError) -> Self {
-        match error {
-            ProbeError::Dial(error) => error.into(),
-            ProbeError::Timeout => Self::new("timeout", error),
-            ProbeError::Lookup(_) => Self::new("lookup_failed", error),
-        }
+impl From<SystemProxyError> for CommandError {
+    fn from(error: SystemProxyError) -> Self {
+        Self::new("system_proxy_failed", error)
     }
 }
 
-impl From<SysProxyError> for CommandError {
-    fn from(error: SysProxyError) -> Self {
-        Self::new("system_proxy_failed", error)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rejected(hop: usize) -> ProbeError {
+        ProbeError::Dial(DialError::Handshake { hop, source: HandshakeError::Socks5Reply(0x05) })
+    }
+
+    #[test]
+    fn rejection_at_last_hop_means_target_unreachable() {
+        let error = CommandError::probe(rejected(0), 1);
+        assert_eq!((error.code, error.hop), ("target_unreachable", Some(0)));
+        let error = CommandError::probe(rejected(1), 2);
+        assert_eq!((error.code, error.hop), ("target_unreachable", Some(1)));
+    }
+
+    #[test]
+    fn rejection_before_last_hop_means_next_hop_unreachable() {
+        let error = CommandError::probe(rejected(0), 2);
+        assert_eq!((error.code, error.hop), ("hop_rejected", Some(0)));
     }
 }

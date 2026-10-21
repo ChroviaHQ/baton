@@ -1,0 +1,55 @@
+{
+  "$schema": "https://dprint.dev/schemas/v0.json",
+  "incremental": true,
+  "typescript": {
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "useTabs": false,
+    "semiColons": "always",
+    "quoteStyle": "preferSingle",
+    "quoteProps": "asNeeded",
+    "newLineKind": "lf",
+    "useBraces": "whenNotSingleLine",
+    "bracePosition": "sameLineUnlessHanging",
+    "singleBodyPosition": "sameLine",
+    "nextControlFlowPosition": "sameLine",
+    "trailingCommas": "onlyMultiLine",
+    "operatorPosition": "nextLine",
+    "preferHanging": false,
+    "preferSingleLine": true,
+    "arrowFunction.useParentheses": "preferNone",
+    "binaryExpression.linePerExpression": false,
+    "memberExpression.linePerExpression": false,
+    "typeLiteral.separatorKind": "semiColon",
+    "enumDeclaration.memberSpacing": "newLine",
+    "spaceAround": false,
+    "spaceSurroundingProperties": false,
+    "objectExpression.preferSingleLine": true,
+    "objectPattern.preferSingleLine": true,
+    "typeLiteral.preferSingleLine": true,
+    "tupleType.preferSingleLine": true,
+    "arrayExpression.preferSingleLine": true,
+    "arrayPattern.preferSingleLine": true,
+    "arguments.preferSingleLine": true,
+    "parameters.preferSingleLine": true,
+    "exportDeclaration.preferSingleLine": true,
+    "importDeclaration.preferSingleLine": true
+  },
+  "json": {
+    "indentWidth": 2
+  },
+  "includes": [
+    "**/*.{ts,tsx,js,jsx,mjs,cjs,json}"
+  ],
+  "excludes": [
+    "**/node_modules",
+    "**/*-lock.json",
+    "**/dist",
+    "**/target",
+    "src-tauri/gen"
+  ],
+  "plugins": [
+    "https://plugins.dprint.dev/typescript-0.93.0.wasm",
+    "https://plugins.dprint.dev/json-0.19.3.wasm"
+  ]
+}

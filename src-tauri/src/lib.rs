@@ -21,6 +21,9 @@ const HIDDEN_ARG: &str = "--hidden";
 
 type RelayState = Mutex<Relay>;
 
+#[derive(Default)]
+struct PendingError(std::sync::Mutex<Option<CommandError>>);
+
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct StatsEvent {
@@ -39,7 +42,7 @@ async fn get_status(state: State<'_, RelayState>) -> Result<Status, CommandError
 async fn start_relay(app: AppHandle, state: State<'_, RelayState>) -> Result<Status, CommandError> {
     let mut relay = state.lock().await;
     let result = relay.start().await;
-    publish(&app, &relay.status());
+    broadcast_status(&app, &relay.status());
     result.map(|_| relay.status())
 }
 
@@ -47,7 +50,7 @@ async fn start_relay(app: AppHandle, state: State<'_, RelayState>) -> Result<Sta
 async fn stop_relay(app: AppHandle, state: State<'_, RelayState>) -> Result<Status, CommandError> {
     let mut relay = state.lock().await;
     let result = relay.stop().await;
-    publish(&app, &relay.status());
+    broadcast_status(&app, &relay.status());
     result.map(|_| relay.status())
 }
 
@@ -59,28 +62,32 @@ async fn save_config(
 ) -> Result<Status, CommandError> {
     let mut relay = state.lock().await;
     let show_in_dock = relay.config().show_in_dock;
-    let result = relay.update(config).await;
+    let result = relay.apply_config(config).await;
     if relay.config().show_in_dock != show_in_dock {
         apply_dock_visibility(&app, relay.config().show_in_dock);
         show_main_window(&app);
     }
-    publish(&app, &relay.status());
+    broadcast_status(&app, &relay.status());
     result.map(|_| relay.status())
 }
 
 #[tauri::command]
 async fn probe(hops: Vec<Hop>) -> Result<EgressInfo, CommandError> {
     for (index, hop) in hops.iter().enumerate() {
-        hop.validate()
-            .map_err(|error| CommandError::invalid_hop(index, error))?;
+        hop.validate().map_err(|error| CommandError::invalid_hop(index, error))?;
     }
-    Ok(probe_egress(&hops, PROBE_TIMEOUT).await?)
+    probe_egress(&hops, PROBE_TIMEOUT).await.map_err(|error| CommandError::probe(error, hops.len()))
 }
 
 #[tauri::command]
 async fn detect_system_proxy(state: State<'_, RelayState>) -> Result<Hop, CommandError> {
     let relay = state.lock().await;
     relay.detect_upstream(relay.config().listen_port)
+}
+
+#[tauri::command]
+fn take_pending_error(pending: State<'_, PendingError>) -> Option<CommandError> {
+    pending.0.lock().ok()?.take()
 }
 
 #[tauri::command]
@@ -93,16 +100,12 @@ fn get_launch_at_login(app: AppHandle) -> Result<bool, CommandError> {
 #[tauri::command]
 fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<bool, CommandError> {
     let manager = app.autolaunch();
-    let result = if enabled {
-        manager.enable()
-    } else {
-        manager.disable()
-    };
+    let result = if enabled { manager.enable() } else { manager.disable() };
     result.map_err(|error| CommandError::new("launch_at_login_failed", error))?;
     get_launch_at_login(app)
 }
 
-fn publish(app: &AppHandle, status: &Status) {
+fn broadcast_status(app: &AppHandle, status: &Status) {
     if let Some(tray) = app.try_state::<Tray>() {
         tray.sync(app, status);
     }
@@ -111,11 +114,8 @@ fn publish(app: &AppHandle, status: &Status) {
 
 #[cfg(target_os = "macos")]
 fn apply_dock_visibility(app: &AppHandle, visible: bool) {
-    let policy = if visible {
-        tauri::ActivationPolicy::Regular
-    } else {
-        tauri::ActivationPolicy::Accessory
-    };
+    let policy =
+        if visible { tauri::ActivationPolicy::Regular } else { tauri::ActivationPolicy::Accessory };
     let _ = app.set_activation_policy(policy);
     #[cfg(debug_assertions)]
     if visible {
@@ -149,19 +149,22 @@ pub(crate) fn show_main_window(app: &AppHandle) {
     }
 }
 
-pub(crate) fn spawn_toggle(app: AppHandle) {
+fn report_error(app: &AppHandle, error: CommandError) {
+    if let Ok(mut pending) = app.state::<PendingError>().0.lock() {
+        *pending = Some(error.clone());
+    }
+    let _ = app.emit("relay://error", error);
+    show_main_window(app);
+}
+
+pub(crate) fn spawn_toggle_relay(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let state = app.state::<RelayState>();
         let mut relay = state.lock().await;
-        let result = if relay.status().running {
-            relay.stop().await
-        } else {
-            relay.start().await
-        };
-        publish(&app, &relay.status());
+        let result = if relay.status().running { relay.stop().await } else { relay.start().await };
+        broadcast_status(&app, &relay.status());
         if let Err(error) = result {
-            let _ = app.emit("relay://error", error);
-            show_main_window(&app);
+            report_error(&app, error);
         }
     });
 }
@@ -171,12 +174,11 @@ pub(crate) fn spawn_toggle_system_proxy(app: AppHandle) {
         let state = app.state::<RelayState>();
         let mut relay = state.lock().await;
         let mut config = relay.config().clone();
-        config.system_proxy = !config.system_proxy;
-        let result = relay.update(config).await;
-        publish(&app, &relay.status());
+        config.use_as_system_proxy = !config.use_as_system_proxy;
+        let result = relay.apply_config(config).await;
+        broadcast_status(&app, &relay.status());
         if let Err(error) = result {
-            let _ = app.emit("relay://error", error);
-            show_main_window(&app);
+            report_error(&app, error);
         }
     });
 }
@@ -203,12 +205,7 @@ fn spawn_stats_ticker(app: AppHandle) {
                         None => (0, 0),
                     };
                     previous = Some((stats, now));
-                    StatsEvent {
-                        active: stats.active,
-                        failed: stats.failed,
-                        up_rate,
-                        down_rate,
-                    }
+                    StatsEvent { active: stats.active, failed: stats.failed, up_rate, down_rate }
                 }
                 None => {
                     previous = None;
@@ -232,10 +229,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
         }))
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec![HIDDEN_ARG]),
-        ))
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
         .invoke_handler(tauri::generate_handler![
             get_status,
             start_relay,
@@ -243,6 +237,7 @@ pub fn run() {
             save_config,
             probe,
             detect_system_proxy,
+            take_pending_error,
             get_launch_at_login,
             set_launch_at_login
         ])
@@ -250,11 +245,12 @@ pub fn run() {
             let data_dir = app.path().app_config_dir()?;
             let relay = Relay::new(&data_dir);
             relay.recover_system_proxy();
-            let auto_connect = relay.config().auto_connect;
+            let start_on_launch = relay.config().start_on_launch;
             apply_dock_visibility(app.handle(), relay.config().show_in_dock);
             let tray = tray::build(app.handle(), &relay.status())?;
             app.manage(tray);
             app.manage::<RelayState>(Mutex::new(relay));
+            app.manage(PendingError::default());
             spawn_stats_ticker(app.handle().clone());
             #[cfg(not(target_os = "macos"))]
             if let Some(window) = app.get_webview_window("main") {
@@ -264,8 +260,8 @@ pub fn run() {
             if !std::env::args().any(|arg| arg == HIDDEN_ARG) {
                 show_main_window(app.handle());
             }
-            if auto_connect {
-                spawn_toggle(app.handle().clone());
+            if start_on_launch {
+                spawn_toggle_relay(app.handle().clone());
             }
             Ok(())
         })

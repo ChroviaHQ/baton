@@ -11,7 +11,7 @@ use tokio::net::TcpStream;
 use crate::address::TargetAddr;
 use crate::dial::{DialError, dial_timeout};
 use crate::handshake::HandshakeError;
-use crate::server::Shared;
+use crate::server::ServerState;
 
 const MAX_REQUEST_HEAD: usize = 64 * 1024;
 const HOP_BY_HOP: &[&str] = &[
@@ -38,29 +38,27 @@ pub(crate) enum InboundError {
     },
 }
 
-pub(crate) async fn handle(client: TcpStream, shared: Arc<Shared>) -> Result<(), InboundError> {
+pub(crate) async fn serve(client: TcpStream, shared: Arc<ServerState>) -> Result<(), InboundError> {
     let _ = client.set_nodelay(true);
     let mut first = [0u8; 1];
     if client.peek(&mut first).await? == 0 {
         return Ok(());
     }
     if first[0] == 0x05 {
-        socks5(client, shared).await
+        serve_socks5(client, shared).await
     } else {
-        http(client, shared).await
+        serve_http(client, shared).await
     }
 }
 
-async fn socks5(mut client: TcpStream, shared: Arc<Shared>) -> Result<(), InboundError> {
+async fn serve_socks5(mut client: TcpStream, shared: Arc<ServerState>) -> Result<(), InboundError> {
     let mut header = [0u8; 2];
     client.read_exact(&mut header).await?;
     let mut methods = vec![0u8; header[1] as usize];
     client.read_exact(&mut methods).await?;
     if !methods.contains(&0x00) {
         client.write_all(&[0x05, 0xff]).await?;
-        return Err(InboundError::Protocol(
-            "SOCKS5 client offered no usable method",
-        ));
+        return Err(InboundError::Protocol("SOCKS5 client offered no usable method"));
     }
     client.write_all(&[0x05, 0x00]).await?;
 
@@ -125,24 +123,22 @@ async fn read_socks5_addr(
 }
 
 async fn socks5_reply(client: &mut TcpStream, code: u8) -> io::Result<()> {
-    client
-        .write_all(&[0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
-        .await
+    client.write_all(&[0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await
 }
 
 fn socks5_code(error: &DialError, hop_count: usize) -> u8 {
     match error {
-        DialError::Handshake {
-            hop,
-            source: HandshakeError::Socks5Reply(code),
-        } if *hop + 1 == hop_count => *code,
+        DialError::Handshake { hop, source: HandshakeError::Socks5Reply(code) }
+            if *hop + 1 == hop_count =>
+        {
+            *code
+        }
         DialError::Timeout => 0x04,
-        DialError::Connect(_) | DialError::Handshake { .. } => 0x01,
-        DialError::Empty => 0x01,
+        DialError::Unreachable(_) | DialError::Handshake { .. } | DialError::NoHops => 0x01,
     }
 }
 
-async fn http(mut client: TcpStream, shared: Arc<Shared>) -> Result<(), InboundError> {
+async fn serve_http(mut client: TcpStream, shared: Arc<ServerState>) -> Result<(), InboundError> {
     let mut buf = Vec::with_capacity(4096);
     let head_len = loop {
         if let Some(pos) = find_head_end(&buf) {
@@ -162,10 +158,7 @@ async fn http(mut client: TcpStream, shared: Arc<Shared>) -> Result<(), InboundE
 
     let mut headers = [httparse::EMPTY_HEADER; 128];
     let mut request = httparse::Request::new(&mut headers);
-    if !matches!(
-        request.parse(&buf[..head_len]),
-        Ok(httparse::Status::Complete(_))
-    ) {
+    if !matches!(request.parse(&buf[..head_len]), Ok(httparse::Status::Complete(_))) {
         respond(&mut client, "400 Bad Request").await?;
         return Err(InboundError::Protocol("malformed HTTP request"));
     }
@@ -180,9 +173,7 @@ async fn http(mut client: TcpStream, shared: Arc<Shared>) -> Result<(), InboundE
         };
         return match dial_timeout(&shared.hops, &target, shared.connect_timeout).await {
             Ok(remote) => {
-                client
-                    .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                    .await?;
+                client.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
                 tunnel(client, remote, &shared, leftover).await
             }
             Err(source) => {
@@ -194,14 +185,10 @@ async fn http(mut client: TcpStream, shared: Arc<Shared>) -> Result<(), InboundE
 
     let Some((target, origin_path)) = split_absolute_uri(path) else {
         respond(&mut client, "400 Bad Request").await?;
-        return Err(InboundError::Protocol(
-            "HTTP proxy request is not absolute-form",
-        ));
+        return Err(InboundError::Protocol("HTTP proxy request is not absolute-form"));
     };
-    let mut forwarded = format!(
-        "{method} {origin_path} HTTP/1.{}\r\n",
-        request.version.unwrap_or(1)
-    );
+    let mut forwarded =
+        format!("{method} {origin_path} HTTP/1.{}\r\n", request.version.unwrap_or(1));
     let mut has_host = false;
     for header in request.headers.iter() {
         let name = header.name.to_ascii_lowercase();
@@ -231,9 +218,7 @@ async fn http(mut client: TcpStream, shared: Arc<Shared>) -> Result<(), InboundE
 }
 
 fn find_head_end(buf: &[u8]) -> Option<usize> {
-    buf.windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .map(|pos| pos + 4)
+    buf.windows(4).position(|w| w == b"\r\n\r\n").map(|pos| pos + 4)
 }
 
 fn split_absolute_uri(uri: &str) -> Option<(TargetAddr, String)> {
@@ -246,15 +231,9 @@ fn split_absolute_uri(uri: &str) -> Option<(TargetAddr, String)> {
         Some(pos) => (&rest[..pos], &rest[pos..]),
         None => (rest, "/"),
     };
-    let authority = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
+    let authority = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
     let target = TargetAddr::parse_authority(authority, 80)?;
-    let path = if path.starts_with('?') {
-        format!("/{path}")
-    } else {
-        path.to_owned()
-    };
+    let path = if path.starts_with('?') { format!("/{path}") } else { path.to_owned() };
     Some((target, path))
 }
 
@@ -284,32 +263,26 @@ async fn respond(client: &mut TcpStream, status: &str) -> io::Result<()> {
 async fn tunnel(
     client: TcpStream,
     mut remote: TcpStream,
-    shared: &Shared,
+    shared: &ServerState,
     prefix: &[u8],
 ) -> Result<(), InboundError> {
     if !prefix.is_empty() {
         remote.write_all(prefix).await?;
-        shared
-            .stats
-            .up
-            .fetch_add(prefix.len() as u64, Ordering::Relaxed);
+        shared.counters.up.fetch_add(prefix.len() as u64, Ordering::Relaxed);
     }
-    let mut client = Metered {
-        inner: client,
-        read: &shared.stats.up,
-        written: &shared.stats.down,
-    };
+    let mut client =
+        MeteredStream { inner: client, read: &shared.counters.up, written: &shared.counters.down };
     tokio::io::copy_bidirectional(&mut client, &mut remote).await?;
     Ok(())
 }
 
-struct Metered<'a, S> {
+struct MeteredStream<'a, S> {
     inner: S,
     read: &'a AtomicU64,
     written: &'a AtomicU64,
 }
 
-impl<S: AsyncRead + Unpin> AsyncRead for Metered<'_, S> {
+impl<S: AsyncRead + Unpin> AsyncRead for MeteredStream<'_, S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -325,7 +298,7 @@ impl<S: AsyncRead + Unpin> AsyncRead for Metered<'_, S> {
     }
 }
 
-impl<S: AsyncWrite + Unpin> AsyncWrite for Metered<'_, S> {
+impl<S: AsyncWrite + Unpin> AsyncWrite for MeteredStream<'_, S> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -355,10 +328,7 @@ mod tests {
     fn splits_absolute_uris() {
         assert_eq!(
             split_absolute_uri("http://example.com/a?b=1"),
-            Some((
-                TargetAddr::Domain("example.com".into(), 80),
-                "/a?b=1".into()
-            ))
+            Some((TargetAddr::Domain("example.com".into(), 80), "/a?b=1".into()))
         );
         assert_eq!(
             split_absolute_uri("http://example.com:8080"),

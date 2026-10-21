@@ -8,7 +8,7 @@ use windows_sys::Win32::Networking::WinInet::{
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
 
-use super::{Endpoints, SysProxyError, parse_windows_proxy_server};
+use super::{ProxyEndpoints, SystemProxyError, parse_windows_proxy_server};
 use crate::config::Hop;
 
 const INTERNET_SETTINGS: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
@@ -21,7 +21,7 @@ pub struct Snapshot {
     auto_config_url: Option<String>,
 }
 
-pub fn snapshot() -> Result<Snapshot, SysProxyError> {
+pub fn snapshot() -> Result<Snapshot, SystemProxyError> {
     let key =
         RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(INTERNET_SETTINGS, KEY_READ)?;
     Ok(Snapshot {
@@ -32,18 +32,18 @@ pub fn snapshot() -> Result<Snapshot, SysProxyError> {
     })
 }
 
-pub fn current() -> Result<Option<Hop>, SysProxyError> {
-    Ok(endpoints(&snapshot()?).into_hop())
+pub fn current() -> Result<Option<Hop>, SystemProxyError> {
+    Ok(endpoints(&snapshot()?).preferred_hop())
 }
 
-pub fn endpoints(snapshot: &Snapshot) -> Endpoints {
+pub fn endpoints(snapshot: &Snapshot) -> ProxyEndpoints {
     match (snapshot.proxy_enable, &snapshot.proxy_server) {
         (Some(1), Some(server)) => parse_windows_proxy_server(server),
-        _ => Endpoints::default(),
+        _ => ProxyEndpoints::default(),
     }
 }
 
-pub fn apply(host: &str, port: u16, bypass: &[&str]) -> Result<(), SysProxyError> {
+pub fn apply(host: &str, port: u16, bypass: &[&str]) -> Result<(), SystemProxyError> {
     let key = open_writable()?;
     let mut overrides = bypass.join(";");
     overrides.push_str(";<local>");
@@ -55,7 +55,7 @@ pub fn apply(host: &str, port: u16, bypass: &[&str]) -> Result<(), SysProxyError
     Ok(())
 }
 
-pub fn restore(snapshot: &Snapshot) -> Result<(), SysProxyError> {
+pub fn restore(snapshot: &Snapshot) -> Result<(), SystemProxyError> {
     let key = open_writable()?;
     match snapshot.proxy_enable {
         Some(value) => key.set_value("ProxyEnable", &value)?,
@@ -89,12 +89,7 @@ fn delete_value(key: &RegKey, name: &str) -> io::Result<()> {
 
 fn refresh() {
     unsafe {
-        InternetSetOptionW(
-            ptr::null(),
-            INTERNET_OPTION_SETTINGS_CHANGED,
-            ptr::null(),
-            0,
-        );
+        InternetSetOptionW(ptr::null(), INTERNET_OPTION_SETTINGS_CHANGED, ptr::null(), 0);
         InternetSetOptionW(ptr::null(), INTERNET_OPTION_REFRESH, ptr::null(), 0);
     }
 }

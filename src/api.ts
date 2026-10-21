@@ -1,12 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-export type ProxyKind = 'http' | 'socks5';
+export type ProxyProtocol = 'http' | 'socks5';
 
 export type UpstreamMode = 'manual' | 'system';
 
 export type Hop = {
-  kind: ProxyKind;
+  protocol: ProxyProtocol;
   host: string;
   port: number;
   username: string;
@@ -19,23 +19,14 @@ export type AppConfig = {
   landing: Hop;
   listenPort: number;
   allowLan: boolean;
-  systemProxy: boolean;
-  autoConnect: boolean;
+  useAsSystemProxy: boolean;
+  startOnLaunch: boolean;
   showInDock: boolean;
 };
 
-export type Status = {
-  config: AppConfig;
-  running: boolean;
-  lanIp: string | null;
-};
+export type Status = {config: AppConfig; running: boolean; lanIp: string | null;};
 
-export type Stats = {
-  active: number;
-  failed: number;
-  upRate: number;
-  downRate: number;
-};
+export type Stats = {active: number; failed: number; upRate: number; downRate: number;};
 
 export type EgressInfo = {
   ip: string;
@@ -46,28 +37,25 @@ export type EgressInfo = {
   latencyMs: number;
 };
 
-export type CommandError = {
-  code: string;
-  hop: number | null;
-  detail: string;
-};
+export type CommandError = {code: string; hop: number | null; detail: string;};
 
 export function toCommandError(error: unknown): CommandError {
   if (error && typeof error === 'object' && 'code' in error) {
     return error as CommandError;
   }
-  return { code: 'unknown', hop: null, detail: String(error) };
+  return {code: 'unknown', hop: null, detail: String(error)};
 }
 
 export const api = {
   getStatus: () => invoke<Status>('get_status'),
-  start: () => invoke<Status>('start_relay'),
-  stop: () => invoke<Status>('stop_relay'),
-  saveConfig: (config: AppConfig) => invoke<Status>('save_config', { config }),
-  probe: (hops: Hop[]) => invoke<EgressInfo>('probe', { hops }),
+  startRelay: () => invoke<Status>('start_relay'),
+  stopRelay: () => invoke<Status>('stop_relay'),
+  saveConfig: (config: AppConfig) => invoke<Status>('save_config', {config}),
+  probe: (hops: Hop[]) => invoke<EgressInfo>('probe', {hops}),
   detectSystemProxy: () => invoke<Hop>('detect_system_proxy'),
+  takePendingError: () => invoke<CommandError | null>('take_pending_error'),
   getLaunchAtLogin: () => invoke<boolean>('get_launch_at_login'),
-  setLaunchAtLogin: (enabled: boolean) => invoke<boolean>('set_launch_at_login', { enabled }),
+  setLaunchAtLogin: (enabled: boolean) => invoke<boolean>('set_launch_at_login', {enabled}),
   onStatus: (handler: (status: Status) => void): Promise<UnlistenFn> =>
     listen<Status>('relay://status', event => handler(event.payload)),
   onStats: (handler: (stats: Stats) => void): Promise<UnlistenFn> =>

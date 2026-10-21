@@ -10,9 +10,9 @@ use crate::handshake::{self, HandshakeError};
 #[derive(Debug, thiserror::Error)]
 pub enum DialError {
     #[error("no hops configured")]
-    Empty,
+    NoHops,
     #[error("cannot reach hop 1: {0}")]
-    Connect(#[source] io::Error),
+    Unreachable(#[source] io::Error),
     #[error("hop {} failed: {source}", .hop + 1)]
     Handshake {
         hop: usize,
@@ -24,15 +24,13 @@ pub enum DialError {
 }
 
 pub async fn dial(hops: &[Hop], target: &TargetAddr) -> Result<TcpStream, DialError> {
-    let first = hops.first().ok_or(DialError::Empty)?;
+    let first = hops.first().ok_or(DialError::NoHops)?;
     let mut stream = TcpStream::connect((first.host.trim(), first.port))
         .await
-        .map_err(DialError::Connect)?;
+        .map_err(DialError::Unreachable)?;
     let _ = stream.set_nodelay(true);
     for (index, hop) in hops.iter().enumerate() {
-        let next = hops
-            .get(index + 1)
-            .map_or_else(|| target.clone(), Hop::target);
+        let next = hops.get(index + 1).map_or_else(|| target.clone(), Hop::address);
         handshake::connect_via(&mut stream, hop, &next)
             .await
             .map_err(|source| DialError::Handshake { hop: index, source })?;
@@ -45,7 +43,5 @@ pub async fn dial_timeout(
     target: &TargetAddr,
     timeout: Duration,
 ) -> Result<TcpStream, DialError> {
-    tokio::time::timeout(timeout, dial(hops, target))
-        .await
-        .map_err(|_| DialError::Timeout)?
+    tokio::time::timeout(timeout, dial(hops, target)).await.map_err(|_| DialError::Timeout)?
 }

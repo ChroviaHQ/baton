@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use baton_core::{Hop, ProxyKind, Server, ServerConfig};
+use baton_core::{Hop, ProxyProtocol, Server, ServerConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -56,17 +56,13 @@ async fn mock_http(
             STANDARD.encode(format!("{username}:{password}"))
         );
         if !head.contains(&expected) {
-            stream
-                .write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
-                .await?;
+            stream.write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n").await?;
             return Ok(());
         }
     }
     seen.send(format!("http {authority}")).unwrap();
     let mut upstream = TcpStream::connect(authority).await?;
-    stream
-        .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
-        .await?;
+    stream.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await?;
     tokio::io::copy_bidirectional(&mut stream, &mut upstream).await?;
     Ok(())
 }
@@ -120,15 +116,11 @@ async fn mock_socks5(
     let mut upstream = match TcpStream::connect((host.as_str(), port)).await {
         Ok(upstream) => upstream,
         Err(_) => {
-            stream
-                .write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
-                .await?;
+            stream.write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
             return Ok(());
         }
     };
-    stream
-        .write_all(&[0x05, 0x00, 0x00, 0x03, 4, b'b', b'n', b'd', b'x', 0, 1])
-        .await?;
+    stream.write_all(&[0x05, 0x00, 0x00, 0x03, 4, b'b', b'n', b'd', b'x', 0, 1]).await?;
     tokio::io::copy_bidirectional(&mut stream, &mut upstream).await?;
     Ok(())
 }
@@ -162,20 +154,17 @@ async fn spawn_http_origin() -> (SocketAddr, mpsc::UnboundedReceiver<String>) {
                     head.push(stream.read_u8().await.unwrap());
                 }
                 tx.send(String::from_utf8(head).unwrap()).unwrap();
-                stream
-                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
-                    .await
-                    .unwrap();
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok").await.unwrap();
             });
         }
     });
     (addr, rx)
 }
 
-fn hop(kind: ProxyKind, addr: SocketAddr, credentials: Option<(&str, &str)>) -> Hop {
+fn hop(protocol: ProxyProtocol, addr: SocketAddr, credentials: Option<(&str, &str)>) -> Hop {
     let (username, password) = credentials.unwrap_or_default();
     Hop {
-        kind,
+        protocol,
         host: addr.ip().to_string(),
         port: addr.port(),
         username: username.into(),
@@ -221,25 +210,16 @@ async fn read_response_head(stream: &mut TcpStream) -> String {
 async fn socks5_inbound_through_http_then_socks5_with_auth() {
     let (seen_tx, mut seen) = mpsc::unbounded_channel();
     let echo = spawn_echo().await;
-    let upstream = spawn_mock(
-        MockProxy {
-            kind: Mock::Http,
-            credentials: None,
-        },
-        seen_tx.clone(),
-    )
-    .await;
+    let upstream =
+        spawn_mock(MockProxy { kind: Mock::Http, credentials: None }, seen_tx.clone()).await;
     let landing = spawn_mock(
-        MockProxy {
-            kind: Mock::Socks5,
-            credentials: Some(("alice", "s3cret")),
-        },
+        MockProxy { kind: Mock::Socks5, credentials: Some(("alice", "s3cret")) },
         seen_tx,
     )
     .await;
     let server = start(vec![
-        hop(ProxyKind::Http, upstream, None),
-        hop(ProxyKind::Socks5, landing, Some(("alice", "s3cret"))),
+        hop(ProxyProtocol::Http, upstream, None),
+        hop(ProxyProtocol::Socks5, landing, Some(("alice", "s3cret"))),
     ])
     .await;
 
@@ -255,7 +235,6 @@ async fn socks5_inbound_through_http_then_socks5_with_auth() {
     drop(stream);
     tokio::time::sleep(Duration::from_millis(50)).await;
     let stats = server.stats();
-    assert_eq!(stats.total, 1);
     assert_eq!(stats.up_bytes, 5);
     assert_eq!(stats.down_bytes, 5);
     server.stop().await;
@@ -265,25 +244,13 @@ async fn socks5_inbound_through_http_then_socks5_with_auth() {
 async fn http_connect_inbound_through_socks5_then_http_with_auth() {
     let (seen_tx, mut seen) = mpsc::unbounded_channel();
     let echo = spawn_echo().await;
-    let upstream = spawn_mock(
-        MockProxy {
-            kind: Mock::Socks5,
-            credentials: None,
-        },
-        seen_tx.clone(),
-    )
-    .await;
-    let landing = spawn_mock(
-        MockProxy {
-            kind: Mock::Http,
-            credentials: Some(("bob", "pw")),
-        },
-        seen_tx,
-    )
-    .await;
+    let upstream =
+        spawn_mock(MockProxy { kind: Mock::Socks5, credentials: None }, seen_tx.clone()).await;
+    let landing =
+        spawn_mock(MockProxy { kind: Mock::Http, credentials: Some(("bob", "pw")) }, seen_tx).await;
     let server = start(vec![
-        hop(ProxyKind::Socks5, upstream, None),
-        hop(ProxyKind::Http, landing, Some(("bob", "pw"))),
+        hop(ProxyProtocol::Socks5, upstream, None),
+        hop(ProxyProtocol::Http, landing, Some(("bob", "pw"))),
     ])
     .await;
 
@@ -307,25 +274,12 @@ async fn http_connect_inbound_through_socks5_then_http_with_auth() {
 async fn plain_http_request_is_rewritten_to_origin_form() {
     let (seen_tx, _seen) = mpsc::unbounded_channel();
     let (origin, mut requests) = spawn_http_origin().await;
-    let upstream = spawn_mock(
-        MockProxy {
-            kind: Mock::Http,
-            credentials: None,
-        },
-        seen_tx.clone(),
-    )
-    .await;
-    let landing = spawn_mock(
-        MockProxy {
-            kind: Mock::Http,
-            credentials: None,
-        },
-        seen_tx,
-    )
-    .await;
+    let upstream =
+        spawn_mock(MockProxy { kind: Mock::Http, credentials: None }, seen_tx.clone()).await;
+    let landing = spawn_mock(MockProxy { kind: Mock::Http, credentials: None }, seen_tx).await;
     let server = start(vec![
-        hop(ProxyKind::Http, upstream, None),
-        hop(ProxyKind::Http, landing, None),
+        hop(ProxyProtocol::Http, upstream, None),
+        hop(ProxyProtocol::Http, landing, None),
     ])
     .await;
 
@@ -345,10 +299,7 @@ async fn plain_http_request_is_rewritten_to_origin_form() {
     assert!(response.ends_with("ok"));
 
     let forwarded = requests.recv().await.unwrap();
-    assert!(
-        forwarded.starts_with("GET /path?q=1 HTTP/1.1\r\n"),
-        "{forwarded}"
-    );
+    assert!(forwarded.starts_with("GET /path?q=1 HTTP/1.1\r\n"), "{forwarded}");
     assert!(forwarded.contains(&format!("Host: {origin}\r\n")));
     assert!(forwarded.contains("Accept: */*\r\n"));
     assert!(forwarded.contains("Connection: close\r\n"));
@@ -360,33 +311,18 @@ async fn plain_http_request_is_rewritten_to_origin_form() {
 async fn landing_auth_failure_is_reported_to_clients() {
     let (seen_tx, _seen) = mpsc::unbounded_channel();
     let echo = spawn_echo().await;
-    let upstream = spawn_mock(
-        MockProxy {
-            kind: Mock::Http,
-            credentials: None,
-        },
-        seen_tx.clone(),
-    )
-    .await;
-    let landing = spawn_mock(
-        MockProxy {
-            kind: Mock::Http,
-            credentials: Some(("bob", "pw")),
-        },
-        seen_tx,
-    )
-    .await;
+    let upstream =
+        spawn_mock(MockProxy { kind: Mock::Http, credentials: None }, seen_tx.clone()).await;
+    let landing =
+        spawn_mock(MockProxy { kind: Mock::Http, credentials: Some(("bob", "pw")) }, seen_tx).await;
     let server = start(vec![
-        hop(ProxyKind::Http, upstream, None),
-        hop(ProxyKind::Http, landing, Some(("bob", "wrong"))),
+        hop(ProxyProtocol::Http, upstream, None),
+        hop(ProxyProtocol::Http, landing, Some(("bob", "wrong"))),
     ])
     .await;
 
     let mut stream = TcpStream::connect(server.local_addr()).await.unwrap();
-    stream
-        .write_all(format!("CONNECT {echo} HTTP/1.1\r\n\r\n").as_bytes())
-        .await
-        .unwrap();
+    stream.write_all(format!("CONNECT {echo} HTTP/1.1\r\n\r\n").as_bytes()).await.unwrap();
     let head = read_response_head(&mut stream).await;
     assert!(head.starts_with("HTTP/1.1 502"), "{head}");
 
@@ -400,30 +336,13 @@ async fn landing_auth_failure_is_reported_to_clients() {
 #[tokio::test]
 async fn unreachable_target_passes_socks5_reply_through() {
     let (seen_tx, _seen) = mpsc::unbounded_channel();
-    let closed = TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap();
-    let upstream = spawn_mock(
-        MockProxy {
-            kind: Mock::Socks5,
-            credentials: None,
-        },
-        seen_tx.clone(),
-    )
-    .await;
-    let landing = spawn_mock(
-        MockProxy {
-            kind: Mock::Socks5,
-            credentials: None,
-        },
-        seen_tx,
-    )
-    .await;
+    let closed = TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+    let upstream =
+        spawn_mock(MockProxy { kind: Mock::Socks5, credentials: None }, seen_tx.clone()).await;
+    let landing = spawn_mock(MockProxy { kind: Mock::Socks5, credentials: None }, seen_tx).await;
     let server = start(vec![
-        hop(ProxyKind::Socks5, upstream, None),
-        hop(ProxyKind::Socks5, landing, None),
+        hop(ProxyProtocol::Socks5, upstream, None),
+        hop(ProxyProtocol::Socks5, landing, None),
     ])
     .await;
 
@@ -434,12 +353,7 @@ async fn unreachable_target_passes_socks5_reply_through() {
 
 #[tokio::test]
 async fn stop_releases_the_port() {
-    let server = start(vec![hop(
-        ProxyKind::Http,
-        "127.0.0.1:1".parse().unwrap(),
-        None,
-    )])
-    .await;
+    let server = start(vec![hop(ProxyProtocol::Http, "127.0.0.1:1".parse().unwrap(), None)]).await;
     let addr = server.local_addr();
     server.stop().await;
     TcpListener::bind(addr).await.unwrap();

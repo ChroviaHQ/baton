@@ -9,10 +9,7 @@ pub enum TargetAddr {
 
 impl TargetAddr {
     pub fn new(host: &str, port: u16) -> Self {
-        let bare = host
-            .strip_prefix('[')
-            .and_then(|h| h.strip_suffix(']'))
-            .unwrap_or(host);
+        let bare = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(host);
         match bare.parse::<IpAddr>() {
             Ok(ip) => Self::Ip(SocketAddr::new(ip, port)),
             Err(_) => Self::Domain(bare.to_owned(), port),

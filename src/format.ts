@@ -15,13 +15,14 @@ export function formatRate(value: number): string {
   return `${formatBytes(value)}/s`;
 }
 
-export function formatHost(host: string, port: number): string {
-  if (!host) {
-    return '—';
-  }
+export function formatEndpoint(host: string, port: number): string {
   return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
 }
 
 export function formatLocation(parts: string[]): string {
   return parts.filter(Boolean).join(' · ');
+}
+
+export function parsePort(value: string): number {
+  return Math.min(Number(value.replace(/\D/g, '').slice(0, 5) || 0), 65535);
 }

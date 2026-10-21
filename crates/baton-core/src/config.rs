@@ -4,24 +4,24 @@ use crate::address::TargetAddr;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ProxyKind {
+pub enum ProxyProtocol {
     Http,
     #[default]
     Socks5,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase")]
 pub struct Hop {
-    pub kind: ProxyKind,
+    pub protocol: ProxyProtocol,
     pub host: String,
     pub port: u16,
     pub username: String,
     pub password: String,
 }
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-pub enum ConfigError {
+#[derive(Debug, thiserror::Error)]
+pub enum HopError {
     #[error("host is empty")]
     EmptyHost,
     #[error("port is zero")]
@@ -31,29 +31,25 @@ pub enum ConfigError {
 }
 
 impl Hop {
-    pub fn target(&self) -> TargetAddr {
+    pub(crate) fn address(&self) -> TargetAddr {
         TargetAddr::new(self.host.trim(), self.port)
     }
 
     pub fn credentials(&self) -> Option<(&str, &str)> {
-        if self.username.is_empty() {
-            None
-        } else {
-            Some((&self.username, &self.password))
-        }
+        if self.username.is_empty() { None } else { Some((&self.username, &self.password)) }
     }
 
-    pub fn validate(&self) -> Result<(), ConfigError> {
+    pub fn validate(&self) -> Result<(), HopError> {
         if self.host.trim().is_empty() {
-            return Err(ConfigError::EmptyHost);
+            return Err(HopError::EmptyHost);
         }
         if self.port == 0 {
-            return Err(ConfigError::ZeroPort);
+            return Err(HopError::ZeroPort);
         }
-        if self.kind == ProxyKind::Socks5
+        if self.protocol == ProxyProtocol::Socks5
             && (self.username.len() > 255 || self.password.len() > 255)
         {
-            return Err(ConfigError::CredentialsTooLong);
+            return Err(HopError::CredentialsTooLong);
         }
         Ok(())
     }

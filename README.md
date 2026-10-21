@@ -1,34 +1,40 @@
 # Baton
 
-Baton chains a local proxy, such as Clash, with a remote landing proxy and exposes the chain as one local endpoint for macOS and Windows.
+Baton is a desktop proxy relay for macOS and Windows. It chains an existing local proxy with a remote landing proxy and serves the combined route through a single local endpoint.
+
+<p align="center">
+  <img src="docs/screenshot.png" alt="Baton" width="400">
+</p>
 
 ```
-apps ──► Baton (127.0.0.1:6868) ──► upstream ──► landing proxy ──► internet
+Application ──► Baton (127.0.0.1:1080) ──► Upstream proxy ──► Landing proxy ──► Destination
 ```
 
 ## Features
 
-- HTTP and SOCKS5 on one local port, with HTTP or SOCKS5 hops and optional authentication
-- Upstream from a fixed address or the current system proxy
-- Optional system proxy mode, restored automatically on exit
-- Egress IP check, live traffic stats, and tray controls
+- Accepts HTTP and SOCKS5 connections on a single local port.
+- Chains two hops over HTTP CONNECT or SOCKS5, with optional authentication on each hop.
+- Uses a fixed upstream address or the operating system's current proxy setting as the first hop.
+- Optionally acts as the system proxy and restores the original settings when the relay stops.
+- Reports the egress IP address and live traffic statistics.
 
-## Usage
+## Getting Started
 
-1. Set the upstream to your local proxy port, or choose **System proxy**.
+1. Set the upstream to the address of an existing local proxy, or select **System proxy**.
 2. Set the landing proxy.
-3. Click **Start Relay** and point your apps at `127.0.0.1:6868`.
+3. Select **Start Relay** and configure applications to use `127.0.0.1:1080`.
 
-## Build
+## Building from Source
 
-Requires Rust, Node.js, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
+Building requires Rust, Node.js 22 or later, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform.
 
 ```sh
 npm install
-npm run tauri dev
 npm run tauri build
 ```
 
+Use `npm run tauri dev` to run the app in development mode.
+
 ## License
 
-[MIT](LICENSE)
+Baton is released under the [MIT License](LICENSE).
