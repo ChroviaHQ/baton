@@ -9,12 +9,24 @@ if (!/^\d+\.\d+\.\d+$/.test(version ?? '')) {
 
 const run = (command, args) => execFileSync(command, args, {stdio: 'inherit'});
 
+const updateJson = (path, update) => {
+  const json = JSON.parse(readFileSync(path, 'utf8'));
+  update(json);
+  writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
+};
+
 if (execFileSync('git', ['status', '--porcelain'], {encoding: 'utf8'}).trim()) {
   console.error('Commit or stash your changes before releasing.');
   process.exit(1);
 }
 
-run(process.execPath, [process.env.npm_execpath, 'version', version, '--no-git-tag-version']);
+updateJson('package.json', json => {
+  json.version = version;
+});
+updateJson('package-lock.json', json => {
+  json.version = version;
+  json.packages[''].version = version;
+});
 const cargoToml = readFileSync('Cargo.toml', 'utf8');
 writeFileSync('Cargo.toml', cargoToml.replace(/^version = "[^"]+"/m, `version = "${version}"`));
 run('cargo', ['update', '--workspace', '--offline']);
