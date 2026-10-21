@@ -49,13 +49,6 @@ impl TargetAddr {
             Self::Domain(_, port) => *port,
         }
     }
-
-    pub fn host(&self) -> String {
-        match self {
-            Self::Ip(addr) => addr.ip().to_string(),
-            Self::Domain(host, _) => host.clone(),
-        }
-    }
 }
 
 impl fmt::Display for TargetAddr {

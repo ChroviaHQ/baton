@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::RelayState;
 use crate::error::CommandError;
-use crate::relay::Status;
+use crate::relay::{Relay, Status};
 use crate::tray::Tray;
 use crate::window::show_main_window;
 
@@ -29,6 +29,16 @@ pub(crate) fn broadcast_status(app: &AppHandle, status: &Status) {
     let _ = app.emit("relay://status", status);
 }
 
+pub(crate) fn publish(
+    app: &AppHandle,
+    relay: &Relay,
+    result: Result<(), CommandError>,
+) -> Result<Status, CommandError> {
+    let status = relay.status();
+    broadcast_status(app, &status);
+    result.map(|_| status)
+}
+
 pub(crate) fn report_error(app: &AppHandle, error: CommandError) {
     if let Ok(mut pending) = app.state::<PendingError>().0.lock() {
         *pending = Some(error.clone());
@@ -45,28 +55,22 @@ pub(crate) fn spawn_stats_ticker(app: AppHandle) {
             interval.tick().await;
             let stats = app.state::<RelayState>().lock().await.stats();
             let now = Instant::now();
-            let event = match stats {
-                Some(stats) => {
-                    let (up_rate, down_rate) = match previous {
-                        Some((last, at)) => {
-                            let secs = now.duration_since(at).as_secs_f64().max(0.001);
-                            (
-                                (stats.up_bytes.saturating_sub(last.up_bytes) as f64 / secs) as u64,
-                                (stats.down_bytes.saturating_sub(last.down_bytes) as f64 / secs)
-                                    as u64,
-                            )
-                        }
-                        None => (0, 0),
-                    };
-                    previous = Some((stats, now));
-                    StatsEvent { active: stats.active, failed: stats.failed, up_rate, down_rate }
+            let event = stats.map_or_else(StatsEvent::default, |stats| {
+                let (last, at) = previous.unwrap_or((stats, now));
+                let secs = now.duration_since(at).as_secs_f64().max(0.001);
+                StatsEvent {
+                    active: stats.active,
+                    failed: stats.failed,
+                    up_rate: rate(stats.up_bytes, last.up_bytes, secs),
+                    down_rate: rate(stats.down_bytes, last.down_bytes, secs),
                 }
-                None => {
-                    previous = None;
-                    StatsEvent::default()
-                }
-            };
+            });
+            previous = stats.map(|stats| (stats, now));
             let _ = app.emit("relay://stats", event);
         }
     });
+}
+
+fn rate(now: u64, last: u64, secs: f64) -> u64 {
+    (now.saturating_sub(last) as f64 / secs) as u64
 }

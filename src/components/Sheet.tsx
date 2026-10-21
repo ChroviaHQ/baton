@@ -1,10 +1,9 @@
-import { X } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 
 import type { CommandError } from '../api';
 import { t } from '../i18n';
 import { useStore } from '../store';
-import { Button, ErrorNote, IconButton } from './ui';
+import { Button, CloseButton, ErrorNote } from './ui';
 
 export function Sheet(
   {title, hint, children, onSave}: {
@@ -59,9 +58,7 @@ export function Sheet(
             <h2 className='text-[14px] font-semibold tracking-tight'>{title}</h2>
             {hint && <p className='mt-0.5 text-[11.5px] leading-snug text-muted'>{hint}</p>}
           </div>
-          <IconButton title={t.close} onClick={closeSheet} className='-mt-1 -mr-1.5'>
-            <X className='size-4' />
-          </IconButton>
+          <CloseButton onClick={closeSheet} />
         </header>
         <div className='space-y-3 px-4 pt-3.5'>{children}</div>
         {error && (

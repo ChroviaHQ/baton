@@ -20,6 +20,8 @@ pub struct Tray {
     toggle: MenuItem<Wry>,
     system_proxy: CheckMenuItem<Wry>,
     labels: Labels,
+    idle_icon: Image<'static>,
+    running_icon: Image<'static>,
 }
 
 #[derive(Deserialize)]
@@ -63,8 +65,10 @@ pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
         &[&toggle, &system_proxy, &PredefinedMenuItem::separator(app)?, &quit],
     )?;
 
+    let idle_icon = Image::from_bytes(IDLE_ICON)?;
+    let running_icon = Image::from_bytes(RUNNING_ICON)?;
     TrayIconBuilder::with_id("main")
-        .icon(Image::from_bytes(IDLE_ICON)?)
+        .icon(idle_icon.clone())
         .icon_as_template(ICON_IS_TEMPLATE)
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -86,7 +90,7 @@ pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
         })
         .build(app)?;
 
-    let tray = Tray { toggle, system_proxy, labels };
+    let tray = Tray { toggle, system_proxy, labels, idle_icon, running_icon };
     tray.sync(app, status);
     Ok(tray)
 }
@@ -97,11 +101,9 @@ impl Tray {
         let _ = self.toggle.set_text(if status.running { &labels.stop } else { &labels.start });
         let _ = self.system_proxy.set_checked(status.config.use_as_system_proxy);
         if let Some(tray) = app.tray_by_id("main") {
-            let icon = if status.running { RUNNING_ICON } else { IDLE_ICON };
-            if let Ok(image) = Image::from_bytes(icon) {
-                let _ = tray.set_icon(Some(image));
-                let _ = tray.set_icon_as_template(ICON_IS_TEMPLATE);
-            }
+            let icon = if status.running { &self.running_icon } else { &self.idle_icon };
+            let _ = tray.set_icon(Some(icon.clone()));
+            let _ = tray.set_icon_as_template(ICON_IS_TEMPLATE);
             let _ = tray.set_tooltip(Some(if status.running {
                 &labels.running
             } else {

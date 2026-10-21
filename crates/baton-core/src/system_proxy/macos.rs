@@ -7,19 +7,19 @@ use crate::hop::Hop;
 
 const KINDS: [&str; 3] = ["webproxy", "securewebproxy", "socksfirewallproxy"];
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Snapshot {
     services: Vec<ServiceState>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ServiceState {
     name: String,
     proxies: Vec<ProxyState>,
     bypass: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ProxyState {
     kind: String,
     enabled: bool,

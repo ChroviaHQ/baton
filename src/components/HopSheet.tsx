@@ -172,7 +172,7 @@ export function HopSheet({role}: {role: HopRole;}) {
     setProbe({status: 'pending'});
     try {
       const hops = isUpstream
-        ? [followSystem ? await api.detectSystemProxy() : hop]
+        ? [await resolveUpstream({...config, upstreamMode: mode, upstream: hop})]
         : [await resolveUpstream(config), hop];
       setProbe({status: 'succeeded', value: await api.probe(hops)});
     } catch (raw) {

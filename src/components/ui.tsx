@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Copy, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Loader2, X } from 'lucide-react';
 import {
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
@@ -136,6 +136,14 @@ export function IconButton(
     >
       {children}
     </button>
+  );
+}
+
+export function CloseButton({onClick}: {onClick: () => void;}) {
+  return (
+    <IconButton title={t.close} onClick={onClick} className='-mt-1 -mr-1.5'>
+      <X className='size-4' />
+    </IconButton>
   );
 }
 

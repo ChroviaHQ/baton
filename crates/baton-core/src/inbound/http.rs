@@ -12,6 +12,7 @@ use crate::server::ServerState;
 use crate::tunnel::tunnel;
 
 const MAX_REQUEST_HEAD: usize = 64 * 1024;
+const CONNECT_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 const HOP_BY_HOP: &[&str] = &[
     "connection",
     "keep-alive",
@@ -53,29 +54,39 @@ pub(super) async fn serve(
     let path = request.path.unwrap_or_default();
     let leftover = &buf[head_len..];
 
-    if method.eq_ignore_ascii_case("CONNECT") {
+    let (target, reply, prefix) = if method.eq_ignore_ascii_case("CONNECT") {
         let Some(target) = TargetAddr::parse_authority(path, 443) else {
             respond(&mut client, "400 Bad Request").await?;
             return Err(InboundError::Protocol("invalid CONNECT authority"));
         };
-        return match dial_timeout(&shared.hops, &target, shared.connect_timeout).await {
-            Ok(remote) => {
-                client.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
-                Ok(tunnel(client, remote, &shared.counters, leftover).await?)
-            }
-            Err(source) => {
-                respond(&mut client, http_status(&source)).await?;
-                Err(InboundError::Dial { target, source })
-            }
+        (target, Some(CONNECT_ESTABLISHED), leftover.to_vec())
+    } else {
+        let Some((target, origin_path)) = split_absolute_uri(path) else {
+            respond(&mut client, "400 Bad Request").await?;
+            return Err(InboundError::Protocol("HTTP proxy request is not absolute-form"));
         };
-    }
-
-    let Some((target, origin_path)) = split_absolute_uri(path) else {
-        respond(&mut client, "400 Bad Request").await?;
-        return Err(InboundError::Protocol("HTTP proxy request is not absolute-form"));
+        let mut prefix = forwarded_head(&request, &origin_path, &target).into_bytes();
+        prefix.extend_from_slice(leftover);
+        (target, None, prefix)
     };
-    let mut forwarded =
-        format!("{method} {origin_path} HTTP/1.{}\r\n", request.version.unwrap_or(1));
+
+    match dial_timeout(&shared.hops, &target, shared.connect_timeout).await {
+        Ok(remote) => {
+            if let Some(reply) = reply {
+                client.write_all(reply).await?;
+            }
+            Ok(tunnel(client, remote, &shared.counters, &prefix).await?)
+        }
+        Err(source) => {
+            respond(&mut client, http_status(&source)).await?;
+            Err(InboundError::Dial { target, source })
+        }
+    }
+}
+
+fn forwarded_head(request: &httparse::Request, origin_path: &str, target: &TargetAddr) -> String {
+    let method = request.method.unwrap_or_default();
+    let mut head = format!("{method} {origin_path} HTTP/1.{}\r\n", request.version.unwrap_or(1));
     let mut has_host = false;
     for header in request.headers.iter() {
         let name = header.name.to_ascii_lowercase();
@@ -83,25 +94,16 @@ pub(super) async fn serve(
             continue;
         }
         has_host |= name == "host";
-        forwarded.push_str(header.name);
-        forwarded.push_str(": ");
-        forwarded.push_str(&String::from_utf8_lossy(header.value));
-        forwarded.push_str("\r\n");
+        head.push_str(header.name);
+        head.push_str(": ");
+        head.push_str(&String::from_utf8_lossy(header.value));
+        head.push_str("\r\n");
     }
     if !has_host {
-        forwarded.push_str(&format!("Host: {}\r\n", host_header(&target)));
+        head.push_str(&format!("Host: {}\r\n", host_header(target)));
     }
-    forwarded.push_str("Connection: close\r\n\r\n");
-
-    let mut prefix = forwarded.into_bytes();
-    prefix.extend_from_slice(leftover);
-    match dial_timeout(&shared.hops, &target, shared.connect_timeout).await {
-        Ok(remote) => Ok(tunnel(client, remote, &shared.counters, &prefix).await?),
-        Err(source) => {
-            respond(&mut client, http_status(&source)).await?;
-            Err(InboundError::Dial { target, source })
-        }
-    }
+    head.push_str("Connection: close\r\n\r\n");
+    head
 }
 
 fn find_head_end(buf: &[u8]) -> Option<usize> {
@@ -125,13 +127,11 @@ fn split_absolute_uri(uri: &str) -> Option<(TargetAddr, String)> {
 }
 
 fn host_header(target: &TargetAddr) -> String {
-    if target.port() == 80 {
-        match target {
-            TargetAddr::Ip(SocketAddr::V6(addr)) => format!("[{}]", addr.ip()),
-            _ => target.host(),
-        }
-    } else {
-        target.to_string()
+    match target {
+        _ if target.port() != 80 => target.to_string(),
+        TargetAddr::Ip(SocketAddr::V6(addr)) => format!("[{}]", addr.ip()),
+        TargetAddr::Ip(addr) => addr.ip().to_string(),
+        TargetAddr::Domain(host, _) => host.clone(),
     }
 }
 

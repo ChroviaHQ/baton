@@ -42,10 +42,14 @@ impl Relay {
         &self.config
     }
 
+    pub fn is_running(&self) -> bool {
+        self.server.is_some()
+    }
+
     pub fn status(&self) -> Status {
         Status {
             config: self.config.clone(),
-            running: self.server.is_some(),
+            running: self.is_running(),
             lan_ip: lan_ip().map(|ip| ip.to_string()),
         }
     }

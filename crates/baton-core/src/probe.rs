@@ -61,36 +61,34 @@ async fn query(hops: &[Hop], service: &LookupService) -> Result<EgressInfo, Prob
     let started = Instant::now();
     let stream = dial(hops, &TargetAddr::Domain(service.host.into(), 443)).await?;
 
-    let server_name = ServerName::try_from(service.host)
-        .map_err(|error| ProbeError::Lookup(error.to_string()))?;
-    let mut tls = TlsConnector::from(tls_config())
-        .connect(server_name, stream)
-        .await
-        .map_err(|error| ProbeError::Lookup(error.to_string()))?;
+    let server_name = ServerName::try_from(service.host).map_err(lookup)?;
+    let mut tls =
+        TlsConnector::from(tls_config()).connect(server_name, stream).await.map_err(lookup)?;
     let request = format!(
         "GET {} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\nUser-Agent: Baton\r\n\r\n",
         service.path, service.host
     );
-    tls.write_all(request.as_bytes())
-        .await
-        .map_err(|error| ProbeError::Lookup(error.to_string()))?;
+    tls.write_all(request.as_bytes()).await.map_err(lookup)?;
 
     let mut response = Vec::new();
     if let Err(error) = tls.read_to_end(&mut response).await {
         if error.kind() != io::ErrorKind::UnexpectedEof || response.is_empty() {
-            return Err(ProbeError::Lookup(error.to_string()));
+            return Err(lookup(error));
         }
     }
 
     let body = parse_response(&response)?;
-    let value: Value =
-        serde_json::from_slice(body).map_err(|error| ProbeError::Lookup(error.to_string()))?;
+    let value: Value = serde_json::from_slice(body).map_err(lookup)?;
     let mut info = (service.normalize)(&value);
     if info.ip.is_empty() {
         return Err(ProbeError::Lookup("response has no IP".into()));
     }
     info.latency_ms = started.elapsed().as_millis() as u64;
     Ok(info)
+}
+
+fn lookup(error: impl ToString) -> ProbeError {
+    ProbeError::Lookup(error.to_string())
 }
 
 fn parse_response(response: &[u8]) -> Result<&[u8], ProbeError> {

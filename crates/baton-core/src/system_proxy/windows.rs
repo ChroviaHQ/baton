@@ -13,7 +13,7 @@ use crate::hop::Hop;
 
 const INTERNET_SETTINGS: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Snapshot {
     proxy_enable: Option<u32>,
     proxy_server: Option<String>,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { api, toCommandError } from '../api';
 import { formatEndpoint, parsePort } from '../format';
@@ -31,18 +31,18 @@ export function SettingsSheet() {
   const [showInDock, setShowInDock] = useState(config.showInDock);
   const [startOnLaunch, setStartOnLaunch] = useState(config.startOnLaunch);
   const [launchAtLogin, setLaunchAtLogin] = useState<boolean | null>(null);
-  const [initialLaunchAtLogin, setInitialLaunchAtLogin] = useState<boolean | null>(null);
+  const initialLaunchAtLogin = useRef<boolean | null>(null);
 
   useEffect(() => {
     api.getLaunchAtLogin().then(enabled => {
       setLaunchAtLogin(enabled);
-      setInitialLaunchAtLogin(enabled);
+      initialLaunchAtLogin.current = enabled;
     }, raw => setSheetError(toCommandError(raw)));
   }, [setSheetError]);
 
   const save = async () => {
     const error = await saveConfig({listenPort, allowLan, showInDock, startOnLaunch});
-    if (error || launchAtLogin === null || launchAtLogin === initialLaunchAtLogin) {
+    if (error || launchAtLogin === null || launchAtLogin === initialLaunchAtLogin.current) {
       return error;
     }
     try {

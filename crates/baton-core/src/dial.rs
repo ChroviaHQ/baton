@@ -25,9 +25,11 @@ pub enum DialError {
 
 pub async fn dial(hops: &[Hop], target: &TargetAddr) -> Result<TcpStream, DialError> {
     let first = hops.first().ok_or(DialError::NoHops)?;
-    let mut stream = TcpStream::connect((first.host.trim(), first.port))
-        .await
-        .map_err(DialError::Unreachable)?;
+    let mut stream = match first.address() {
+        TargetAddr::Ip(addr) => TcpStream::connect(addr).await,
+        TargetAddr::Domain(host, port) => TcpStream::connect((host.as_str(), port)).await,
+    }
+    .map_err(DialError::Unreachable)?;
     let _ = stream.set_nodelay(true);
     for (index, hop) in hops.iter().enumerate() {
         let next = hops.get(index + 1).map_or_else(|| target.clone(), Hop::address);

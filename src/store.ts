@@ -74,11 +74,7 @@ export const useStore = create<Store>((set, get) => {
       set({status: await command(), error: null});
       return null;
     } catch (raw) {
-      const error = toCommandError(raw);
-      try {
-        set({status: await api.getStatus()});
-      } catch {}
-      return error;
+      return toCommandError(raw);
     } finally {
       set({busy: false});
     }

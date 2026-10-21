@@ -7,7 +7,7 @@ use tauri_plugin_autostart::ManagerExt;
 use crate::RelayState;
 use crate::config::AppConfig;
 use crate::error::CommandError;
-use crate::events::{PendingError, broadcast_status};
+use crate::events::{PendingError, publish};
 use crate::relay::Status;
 use crate::window::{apply_dock_visibility, show_main_window};
 
@@ -25,8 +25,7 @@ pub async fn start_relay(
 ) -> Result<Status, CommandError> {
     let mut relay = state.lock().await;
     let result = relay.start().await;
-    broadcast_status(&app, &relay.status());
-    result.map(|_| relay.status())
+    publish(&app, &relay, result)
 }
 
 #[tauri::command]
@@ -36,8 +35,7 @@ pub async fn stop_relay(
 ) -> Result<Status, CommandError> {
     let mut relay = state.lock().await;
     let result = relay.stop().await;
-    broadcast_status(&app, &relay.status());
-    result.map(|_| relay.status())
+    publish(&app, &relay, result)
 }
 
 #[tauri::command]
@@ -53,8 +51,7 @@ pub async fn save_config(
         apply_dock_visibility(&app, relay.config().show_in_dock);
         show_main_window(&app);
     }
-    broadcast_status(&app, &relay.status());
-    result.map(|_| relay.status())
+    publish(&app, &relay, result)
 }
 
 #[tauri::command]

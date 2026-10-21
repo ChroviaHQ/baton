@@ -1,8 +1,8 @@
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
-import { describeError, t } from '../i18n';
+import { describeError } from '../i18n';
 import { useStore } from '../store';
-import { IconButton } from './ui';
+import { CloseButton } from './ui';
 
 export function ErrorToast() {
   const error = useStore(s => s.error);
@@ -17,9 +17,7 @@ export function ErrorToast() {
     >
       <AlertTriangle className='mt-px size-4 shrink-0 text-danger' />
       <span className='flex-1 leading-snug'>{describeError(error)}</span>
-      <IconButton title={t.close} onClick={dismiss} className='-mt-1 -mr-1.5'>
-        <X className='size-4' />
-      </IconButton>
+      <CloseButton onClick={dismiss} />
     </div>
   );
 }

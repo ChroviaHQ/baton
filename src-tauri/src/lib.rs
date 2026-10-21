@@ -10,7 +10,7 @@ use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
-use crate::events::{PendingError, broadcast_status, report_error, spawn_stats_ticker};
+use crate::events::{PendingError, publish, report_error, spawn_stats_ticker};
 use crate::relay::Relay;
 use crate::window::{apply_dock_visibility, prepare_main_window, show_main_window};
 
@@ -22,9 +22,8 @@ pub(crate) fn spawn_toggle_relay(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let state = app.state::<RelayState>();
         let mut relay = state.lock().await;
-        let result = if relay.status().running { relay.stop().await } else { relay.start().await };
-        broadcast_status(&app, &relay.status());
-        if let Err(error) = result {
+        let result = if relay.is_running() { relay.stop().await } else { relay.start().await };
+        if let Err(error) = publish(&app, &relay, result) {
             report_error(&app, error);
         }
     });
@@ -37,8 +36,7 @@ pub(crate) fn spawn_toggle_system_proxy(app: AppHandle) {
         let mut config = relay.config().clone();
         config.use_as_system_proxy = !config.use_as_system_proxy;
         let result = relay.apply_config(config).await;
-        broadcast_status(&app, &relay.status());
-        if let Err(error) = result {
+        if let Err(error) = publish(&app, &relay, result) {
             report_error(&app, error);
         }
     });
