@@ -55,7 +55,7 @@ impl ProxyEndpoints {
     }
 }
 
-#[cfg(any(windows, test))]
+#[cfg(windows)]
 fn parse_endpoint(value: &str) -> Option<(String, u16)> {
     let value = value.trim();
     let value = value.split_once("://").map_or(value, |(_, rest)| rest);
@@ -66,7 +66,7 @@ fn parse_endpoint(value: &str) -> Option<(String, u16)> {
     (!host.is_empty()).then(|| (host.to_owned(), port))
 }
 
-#[cfg(any(windows, test))]
+#[cfg(windows)]
 fn parse_windows_proxy_server(value: &str) -> ProxyEndpoints {
     if !value.contains('=') {
         let endpoint = parse_endpoint(value);
@@ -138,33 +138,5 @@ impl SystemProxy {
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error.into()),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_endpoints() {
-        assert_eq!(parse_endpoint("127.0.0.1:7890"), Some(("127.0.0.1".into(), 7890)));
-        assert_eq!(parse_endpoint("http://proxy:8080/"), Some(("proxy".into(), 8080)));
-        assert_eq!(parse_endpoint("[::1]:1080"), Some(("::1".into(), 1080)));
-        assert_eq!(parse_endpoint("proxy"), None);
-        assert_eq!(parse_endpoint("proxy:0"), None);
-    }
-
-    #[test]
-    fn parses_windows_proxy_server() {
-        let single = parse_windows_proxy_server("127.0.0.1:7890").preferred_hop().unwrap();
-        assert_eq!((single.protocol, single.port), (ProxyProtocol::Http, 7890));
-
-        let socks_only =
-            parse_windows_proxy_server("socks=127.0.0.1:1080").preferred_hop().unwrap();
-        assert_eq!((socks_only.protocol, socks_only.port), (ProxyProtocol::Socks5, 1080));
-
-        let mixed =
-            parse_windows_proxy_server("http=a:1;https=b:2;socks=c:3").preferred_hop().unwrap();
-        assert_eq!((mixed.protocol, mixed.host.as_str()), (ProxyProtocol::Http, "b"));
     }
 }

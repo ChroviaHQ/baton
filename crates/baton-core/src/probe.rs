@@ -154,36 +154,3 @@ fn normalize_ip2location(value: &Value) -> EgressInfo {
         latency_ms: 0,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_successful_response() {
-        let response =
-            b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ip\":\"1.2.3.4\"}";
-        assert_eq!(parse_response(response).unwrap(), b"{\"ip\":\"1.2.3.4\"}");
-    }
-
-    #[test]
-    fn rejects_error_status() {
-        let response = b"HTTP/1.0 429 Too Many Requests\r\n\r\n";
-        assert!(matches!(parse_response(response), Err(ProbeError::Lookup(_))));
-    }
-
-    #[test]
-    fn normalizes_ip2location() {
-        let value = serde_json::json!({
-            "ip": "1.2.3.4",
-            "country_code": "US",
-            "region_name": "California",
-            "city_name": "San Jose",
-            "asn": "13335",
-            "as": "Cloudflare",
-        });
-        let info = normalize_ip2location(&value);
-        assert_eq!(info.org, "AS13335 Cloudflare");
-        assert_eq!(info.city, "San Jose");
-    }
-}

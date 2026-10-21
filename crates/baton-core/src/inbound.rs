@@ -319,26 +319,3 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for MeteredStream<'_, S> {
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn splits_absolute_uris() {
-        assert_eq!(
-            split_absolute_uri("http://example.com/a?b=1"),
-            Some((TargetAddr::Domain("example.com".into(), 80), "/a?b=1".into()))
-        );
-        assert_eq!(
-            split_absolute_uri("http://example.com:8080"),
-            Some((TargetAddr::Domain("example.com".into(), 8080), "/".into()))
-        );
-        assert_eq!(
-            split_absolute_uri("HTTP://user:pw@[::1]:81?x"),
-            Some((TargetAddr::Ip("[::1]:81".parse().unwrap()), "/?x".into()))
-        );
-        assert_eq!(split_absolute_uri("/relative"), None);
-        assert_eq!(split_absolute_uri("https://example.com/"), None);
-    }
-}

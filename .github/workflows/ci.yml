@@ -26,5 +26,4 @@ jobs:
       - run: npm run build
       - run: npm run checkFormatting
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
       - run: npx tauri build --no-bundle

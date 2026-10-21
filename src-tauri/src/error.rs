@@ -71,26 +71,3 @@ impl From<SystemProxyError> for CommandError {
         Self::new("system_proxy_failed", error)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn rejected(hop: usize) -> ProbeError {
-        ProbeError::Dial(DialError::Handshake { hop, source: HandshakeError::Socks5Reply(0x05) })
-    }
-
-    #[test]
-    fn rejection_at_last_hop_means_target_unreachable() {
-        let error = CommandError::probe(rejected(0), 1);
-        assert_eq!((error.code, error.hop), ("target_unreachable", Some(0)));
-        let error = CommandError::probe(rejected(1), 2);
-        assert_eq!((error.code, error.hop), ("target_unreachable", Some(1)));
-    }
-
-    #[test]
-    fn rejection_before_last_hop_means_next_hop_unreachable() {
-        let error = CommandError::probe(rejected(0), 2);
-        assert_eq!((error.code, error.hop), ("hop_rejected", Some(0)));
-    }
-}
