@@ -8,7 +8,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::Hop;
+use crate::hop::Hop;
 use crate::inbound;
 
 #[derive(Debug)]
@@ -41,7 +41,6 @@ pub(crate) struct ServerState {
 }
 
 pub struct Server {
-    local_addr: SocketAddr,
     shared: Arc<ServerState>,
     cancel: CancellationToken,
     task: Option<JoinHandle<()>>,
@@ -59,11 +58,7 @@ impl Server {
         let cancel = CancellationToken::new();
         let task = tokio::spawn(accept_loop(listener, shared.clone(), cancel.clone()));
         tracing::info!(%local_addr, "listening");
-        Ok(Self { local_addr, shared, cancel, task: Some(task) })
-    }
-
-    pub fn local_addr(&self) -> SocketAddr {
-        self.local_addr
+        Ok(Self { shared, cancel, task: Some(task) })
     }
 
     pub fn stats(&self) -> StatsSnapshot {

@@ -8,8 +8,8 @@ use windows_sys::Win32::Networking::WinInet::{
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
 
-use super::{ProxyEndpoints, SystemProxyError, parse_windows_proxy_server};
-use crate::config::Hop;
+use super::{ProxyEndpoints, SystemProxyError};
+use crate::hop::Hop;
 
 const INTERNET_SETTINGS: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 
@@ -92,4 +92,35 @@ fn refresh() {
         InternetSetOptionW(ptr::null(), INTERNET_OPTION_SETTINGS_CHANGED, ptr::null(), 0);
         InternetSetOptionW(ptr::null(), INTERNET_OPTION_REFRESH, ptr::null(), 0);
     }
+}
+
+fn parse_endpoint(value: &str) -> Option<(String, u16)> {
+    let value = value.trim();
+    let value = value.split_once("://").map_or(value, |(_, rest)| rest);
+    let value = value.trim_end_matches('/');
+    let (host, port) = value.rsplit_once(':')?;
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    let port = port.parse().ok().filter(|port| *port != 0)?;
+    (!host.is_empty()).then(|| (host.to_owned(), port))
+}
+
+fn parse_windows_proxy_server(value: &str) -> ProxyEndpoints {
+    if !value.contains('=') {
+        let endpoint = parse_endpoint(value);
+        return ProxyEndpoints { https: endpoint.clone(), http: endpoint, socks: None };
+    }
+    let mut endpoints = ProxyEndpoints::default();
+    for entry in value.split(';') {
+        let Some((scheme, address)) = entry.split_once('=') else {
+            continue;
+        };
+        let endpoint = parse_endpoint(address);
+        match scheme.trim().to_ascii_lowercase().as_str() {
+            "https" => endpoints.https = endpoint,
+            "http" => endpoints.http = endpoint,
+            "socks" | "socks5" => endpoints.socks = endpoint,
+            _ => {}
+        }
+    }
+    endpoints
 }

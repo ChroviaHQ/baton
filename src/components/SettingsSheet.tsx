@@ -1,33 +1,23 @@
 import { useEffect, useState } from 'react';
 
 import { api, toCommandError } from '../api';
-import { parsePort } from '../format';
+import { formatEndpoint, parsePort } from '../format';
 import { t } from '../i18n';
+import { isMac } from '../platform';
 import { useStore } from '../store';
 import { Sheet } from './Sheet';
-import { CopyIcon, TextField, ToggleRow, useCopy } from './ui';
-
-const isMac = navigator.userAgent.includes('Mac');
+import { CopyButton, TextField, ToggleRow } from './ui';
 
 function LanAddress({ip, port}: {ip: string | null; port: number;}) {
-  const [copied, copy] = useCopy();
   if (!ip) {
     return <div className='text-[11.5px] text-muted'>{t.noLanIp}</div>;
   }
-  const address = `${ip}:${port}`;
+  const address = formatEndpoint(ip, port);
   return (
-    <button
-      type='button'
-      onClick={() => copy(address)}
-      title={copied ? t.copied : t.copy}
-      className='group flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-left transition hover:border-accent/40'
-    >
-      <span className='text-[11.5px] text-muted'>{t.lanAddress}</span>
-      <span className='flex items-center gap-2 font-mono text-[12px]'>
-        {address}
-        <CopyIcon copied={copied} />
-      </span>
-    </button>
+    <CopyButton value={address}>
+      <span className='flex-1 text-[11.5px] text-muted'>{t.lanAddress}</span>
+      <span className='font-mono text-[12px]'>{address}</span>
+    </CopyButton>
   );
 }
 
@@ -51,7 +41,7 @@ export function SettingsSheet() {
   }, [setSheetError]);
 
   const save = async () => {
-    const error = await saveConfig({...config, listenPort, allowLan, showInDock, startOnLaunch});
+    const error = await saveConfig({listenPort, allowLan, showInDock, startOnLaunch});
     if (error || launchAtLogin === null || launchAtLogin === initialLaunchAtLogin) {
       return error;
     }

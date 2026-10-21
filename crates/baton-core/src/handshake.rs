@@ -6,7 +6,7 @@ use base64::engine::general_purpose::STANDARD;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::address::TargetAddr;
-use crate::config::{Hop, ProxyProtocol};
+use crate::hop::{Hop, ProxyProtocol};
 
 const MAX_RESPONSE_HEAD: usize = 8 * 1024;
 
@@ -18,9 +18,9 @@ pub enum HandshakeError {
     AuthFailed,
     #[error("proxy requires credentials")]
     AuthRequired,
-    #[error("proxy answered HTTP {0}")]
+    #[error("HTTP {0}")]
     HttpStatus(u16),
-    #[error("proxy answered SOCKS5 reply {0:#04x}")]
+    #[error("SOCKS5 reply {0:#04x}")]
     Socks5Reply(u8),
     #[error("proxy sent a malformed response")]
     Malformed,
@@ -170,10 +170,7 @@ where
     Ok(())
 }
 
-pub(crate) fn write_socks5_addr(
-    buf: &mut Vec<u8>,
-    target: &TargetAddr,
-) -> Result<(), HandshakeError> {
+fn write_socks5_addr(buf: &mut Vec<u8>, target: &TargetAddr) -> Result<(), HandshakeError> {
     match target {
         TargetAddr::Ip(SocketAddr::V4(addr)) => {
             buf.push(0x01);

@@ -40,9 +40,7 @@ function TrackNode(
               : 'border-line bg-surface-2 text-muted group-hover:text-text'
           }`}
         >
-          {loading
-            ? <Loader2 className='size-[18px] animate-spin' />
-            : <Icon className='size-[18px]' />}
+          {loading ? <Loader2 className='size-4.5 animate-spin' /> : <Icon className='size-4.5' />}
         </span>
       </span>
       <span className='mt-2 text-[11px] leading-4 font-medium text-muted'>{label}</span>
@@ -85,25 +83,20 @@ function TrackLine({active}: {active: boolean;}) {
 }
 
 export function RelayTrack() {
-  const status = useStore(s => s.status);
+  const {running, config} = useStore(s => s.status!);
   const busy = useStore(s => s.busy);
   const probe = useStore(s => s.chainProbe);
   const toggleRelay = useStore(s => s.toggleRelay);
   const openSheet = useStore(s => s.openSheet);
   const probeChain = useStore(s => s.probeChain);
-  if (!status) {
-    return null;
-  }
-
-  const {running, config} = status;
-  const egress = probe?.phase === 'done'
-    ? probe.info.ip
-    : probe?.phase === 'failed'
+  const egress = probe?.status === 'succeeded'
+    ? probe.value.ip
+    : probe?.status === 'failed'
     ? t.probeFailed
     : t.egressPrompt;
 
   return (
-    <Card className='p-4'>
+    <Card>
       <div className='relative grid grid-cols-4'>
         <TrackLine active={running} />
         <TrackNode
@@ -135,10 +128,15 @@ export function RelayTrack() {
           label={t.egress}
           value={egress}
           active={running}
-          loading={probe?.phase === 'running'}
-          failed={probe?.phase === 'failed'}
-          title={probe?.phase === 'done'
-            ? formatLocation([probe.info.ip, probe.info.country, probe.info.city, probe.info.org])
+          loading={probe?.status === 'pending'}
+          failed={probe?.status === 'failed'}
+          title={probe?.status === 'succeeded'
+            ? formatLocation([
+              probe.value.ip,
+              probe.value.country,
+              probe.value.city,
+              probe.value.org,
+            ])
             : t.probeChainHint}
           onClick={probeChain}
         />

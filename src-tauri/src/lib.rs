@@ -1,161 +1,22 @@
+mod commands;
 mod config;
 mod error;
+mod events;
 mod relay;
 mod tray;
+mod window;
 
-use std::time::{Duration, Instant};
-
-use baton_core::{EgressInfo, Hop, StatsSnapshot, probe_egress};
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
-use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
-use crate::config::AppConfig;
-use crate::error::CommandError;
-use crate::relay::{Relay, Status};
-use crate::tray::Tray;
+use crate::events::{PendingError, broadcast_status, report_error, spawn_stats_ticker};
+use crate::relay::Relay;
+use crate::window::{apply_dock_visibility, prepare_main_window, show_main_window};
 
-const PROBE_TIMEOUT: Duration = Duration::from_secs(12);
 const HIDDEN_ARG: &str = "--hidden";
 
-type RelayState = Mutex<Relay>;
-
-#[derive(Default)]
-struct PendingError(std::sync::Mutex<Option<CommandError>>);
-
-#[derive(Clone, Debug, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct StatsEvent {
-    active: u64,
-    failed: u64,
-    up_rate: u64,
-    down_rate: u64,
-}
-
-#[tauri::command]
-async fn get_status(state: State<'_, RelayState>) -> Result<Status, CommandError> {
-    Ok(state.lock().await.status())
-}
-
-#[tauri::command]
-async fn start_relay(app: AppHandle, state: State<'_, RelayState>) -> Result<Status, CommandError> {
-    let mut relay = state.lock().await;
-    let result = relay.start().await;
-    broadcast_status(&app, &relay.status());
-    result.map(|_| relay.status())
-}
-
-#[tauri::command]
-async fn stop_relay(app: AppHandle, state: State<'_, RelayState>) -> Result<Status, CommandError> {
-    let mut relay = state.lock().await;
-    let result = relay.stop().await;
-    broadcast_status(&app, &relay.status());
-    result.map(|_| relay.status())
-}
-
-#[tauri::command]
-async fn save_config(
-    app: AppHandle,
-    state: State<'_, RelayState>,
-    config: AppConfig,
-) -> Result<Status, CommandError> {
-    let mut relay = state.lock().await;
-    let show_in_dock = relay.config().show_in_dock;
-    let result = relay.apply_config(config).await;
-    if relay.config().show_in_dock != show_in_dock {
-        apply_dock_visibility(&app, relay.config().show_in_dock);
-        show_main_window(&app);
-    }
-    broadcast_status(&app, &relay.status());
-    result.map(|_| relay.status())
-}
-
-#[tauri::command]
-async fn probe(hops: Vec<Hop>) -> Result<EgressInfo, CommandError> {
-    for (index, hop) in hops.iter().enumerate() {
-        hop.validate().map_err(|error| CommandError::invalid_hop(index, error))?;
-    }
-    probe_egress(&hops, PROBE_TIMEOUT).await.map_err(|error| CommandError::probe(error, hops.len()))
-}
-
-#[tauri::command]
-async fn detect_system_proxy(state: State<'_, RelayState>) -> Result<Hop, CommandError> {
-    let relay = state.lock().await;
-    relay.detect_upstream(relay.config().listen_port)
-}
-
-#[tauri::command]
-fn take_pending_error(pending: State<'_, PendingError>) -> Option<CommandError> {
-    pending.0.lock().ok()?.take()
-}
-
-#[tauri::command]
-fn get_launch_at_login(app: AppHandle) -> Result<bool, CommandError> {
-    app.autolaunch()
-        .is_enabled()
-        .map_err(|error| CommandError::new("launch_at_login_failed", error))
-}
-
-#[tauri::command]
-fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<bool, CommandError> {
-    let manager = app.autolaunch();
-    let result = if enabled { manager.enable() } else { manager.disable() };
-    result.map_err(|error| CommandError::new("launch_at_login_failed", error))?;
-    get_launch_at_login(app)
-}
-
-fn broadcast_status(app: &AppHandle, status: &Status) {
-    if let Some(tray) = app.try_state::<Tray>() {
-        tray.sync(app, status);
-    }
-    let _ = app.emit("relay://status", status);
-}
-
-#[cfg(target_os = "macos")]
-fn apply_dock_visibility(app: &AppHandle, visible: bool) {
-    let policy =
-        if visible { tauri::ActivationPolicy::Regular } else { tauri::ActivationPolicy::Accessory };
-    let _ = app.set_activation_policy(policy);
-    #[cfg(debug_assertions)]
-    if visible {
-        let _ = app.run_on_main_thread(restore_dev_dock_icon);
-    }
-}
-
-#[cfg(all(target_os = "macos", debug_assertions))]
-fn restore_dev_dock_icon() {
-    use objc2::{AllocAnyThread, MainThreadMarker};
-    use objc2_app_kit::{NSApplication, NSImage};
-    use objc2_foundation::NSData;
-
-    let Some(mtm) = MainThreadMarker::new() else {
-        return;
-    };
-    let data = NSData::with_bytes(include_bytes!("../icons/icon.png"));
-    if let Some(icon) = NSImage::initWithData(NSImage::alloc(), &data) {
-        unsafe { NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&icon)) };
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn apply_dock_visibility(_app: &AppHandle, _visible: bool) {}
-
-pub(crate) fn show_main_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-}
-
-fn report_error(app: &AppHandle, error: CommandError) {
-    if let Ok(mut pending) = app.state::<PendingError>().0.lock() {
-        *pending = Some(error.clone());
-    }
-    let _ = app.emit("relay://error", error);
-    show_main_window(app);
-}
+pub(crate) type RelayState = Mutex<Relay>;
 
 pub(crate) fn spawn_toggle_relay(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -183,40 +44,6 @@ pub(crate) fn spawn_toggle_system_proxy(app: AppHandle) {
     });
 }
 
-fn spawn_stats_ticker(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        let mut previous: Option<(StatsSnapshot, Instant)> = None;
-        loop {
-            interval.tick().await;
-            let stats = app.state::<RelayState>().lock().await.stats();
-            let now = Instant::now();
-            let event = match stats {
-                Some(stats) => {
-                    let (up_rate, down_rate) = match previous {
-                        Some((last, at)) => {
-                            let secs = now.duration_since(at).as_secs_f64().max(0.001);
-                            (
-                                (stats.up_bytes.saturating_sub(last.up_bytes) as f64 / secs) as u64,
-                                (stats.down_bytes.saturating_sub(last.down_bytes) as f64 / secs)
-                                    as u64,
-                            )
-                        }
-                        None => (0, 0),
-                    };
-                    previous = Some((stats, now));
-                    StatsEvent { active: stats.active, failed: stats.failed, up_rate, down_rate }
-                }
-                None => {
-                    previous = None;
-                    StatsEvent::default()
-                }
-            };
-            let _ = app.emit("relay://stats", event);
-        }
-    });
-}
-
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -231,15 +58,15 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
         .invoke_handler(tauri::generate_handler![
-            get_status,
-            start_relay,
-            stop_relay,
-            save_config,
-            probe,
-            detect_system_proxy,
-            take_pending_error,
-            get_launch_at_login,
-            set_launch_at_login
+            commands::get_status,
+            commands::start_relay,
+            commands::stop_relay,
+            commands::save_config,
+            commands::probe,
+            commands::detect_system_proxy,
+            commands::take_pending_error,
+            commands::get_launch_at_login,
+            commands::set_launch_at_login
         ])
         .setup(|app| {
             let data_dir = app.path().app_config_dir()?;
@@ -252,11 +79,7 @@ pub fn run() {
             app.manage::<RelayState>(Mutex::new(relay));
             app.manage(PendingError::default());
             spawn_stats_ticker(app.handle().clone());
-            #[cfg(not(target_os = "macos"))]
-            if let Some(window) = app.get_webview_window("main") {
-                window.set_decorations(false)?;
-                window.set_shadow(true)?;
-            }
+            prepare_main_window(app.handle())?;
             if !std::env::args().any(|arg| arg == HIDDEN_ARG) {
                 show_main_window(app.handle());
             }

@@ -4,8 +4,8 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 
 use crate::address::TargetAddr;
-use crate::config::Hop;
 use crate::handshake::{self, HandshakeError};
+use crate::hop::Hop;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DialError {

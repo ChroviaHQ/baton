@@ -9,8 +9,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::TlsConnector;
 
 use crate::address::TargetAddr;
-use crate::config::Hop;
 use crate::dial::{DialError, dial};
+use crate::hop::Hop;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

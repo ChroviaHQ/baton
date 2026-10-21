@@ -8,11 +8,12 @@ pub struct CommandError {
     pub code: &'static str,
     pub hop: Option<usize>,
     pub detail: String,
+    pub reply: Option<u8>,
 }
 
 impl CommandError {
     pub fn new(code: &'static str, detail: impl ToString) -> Self {
-        Self { code, hop: None, detail: detail.to_string() }
+        Self { code, hop: None, detail: detail.to_string(), reply: None }
     }
 
     pub fn with_hop(mut self, hop: usize) -> Self {
@@ -28,9 +29,7 @@ impl CommandError {
         };
         Self::new(code, error).with_hop(hop)
     }
-}
 
-impl CommandError {
     pub fn probe(error: ProbeError, hop_count: usize) -> Self {
         match error {
             ProbeError::Dial(error) => Self::dial(error, hop_count),
@@ -40,29 +39,32 @@ impl CommandError {
     }
 
     fn dial(error: DialError, hop_count: usize) -> Self {
-        let detail = error.to_string();
         match error {
-            DialError::NoHops => Self::new("empty_chain", detail),
-            DialError::Timeout => Self::new("timeout", detail),
-            DialError::Unreachable(_) => Self::new("hop_unreachable", detail).with_hop(0),
-            DialError::Handshake { hop, source } => {
-                let code = match source {
-                    HandshakeError::AuthFailed => "auth_failed",
-                    HandshakeError::AuthRequired => "auth_required",
-                    HandshakeError::HttpStatus(_) | HandshakeError::Socks5Reply(_)
-                        if hop + 1 == hop_count =>
-                    {
-                        "target_unreachable"
-                    }
-                    HandshakeError::HttpStatus(_) | HandshakeError::Socks5Reply(_) => {
-                        "hop_rejected"
-                    }
-                    HandshakeError::Io(_) | HandshakeError::Malformed => "protocol_error",
-                    HandshakeError::InvalidInput(_) => "invalid_input",
-                };
-                Self::new(code, detail).with_hop(hop)
-            }
+            DialError::NoHops => Self::new("empty_chain", error),
+            DialError::Timeout => Self::new("timeout", error),
+            DialError::Unreachable(_) => Self::new("hop_unreachable", error).with_hop(0),
+            DialError::Handshake { hop, source } => Self::handshake(hop, source, hop_count),
         }
+    }
+
+    fn handshake(hop: usize, source: HandshakeError, hop_count: usize) -> Self {
+        let code = match source {
+            HandshakeError::AuthFailed => "auth_failed",
+            HandshakeError::AuthRequired => "auth_required",
+            HandshakeError::HttpStatus(_) | HandshakeError::Socks5Reply(_)
+                if hop + 1 == hop_count =>
+            {
+                "target_unreachable"
+            }
+            HandshakeError::HttpStatus(_) | HandshakeError::Socks5Reply(_) => "hop_rejected",
+            HandshakeError::Io(_) | HandshakeError::Malformed => "protocol_error",
+            HandshakeError::InvalidInput(_) => "invalid_input",
+        };
+        let reply = match source {
+            HandshakeError::Socks5Reply(reply) => Some(reply),
+            _ => None,
+        };
+        Self { reply, ..Self::new(code, source).with_hop(hop) }
     }
 }
 

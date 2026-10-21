@@ -1,13 +1,14 @@
 import { useState } from 'react';
 
 import { t } from '../i18n';
+import { isWindows } from '../platform';
 import { useStore } from '../store';
 import { Sheet } from './Sheet';
-import { CopyIcon, Segmented, useCopy } from './ui';
+import { CopyButton, Segmented } from './ui';
 
 type Shell = 'posix' | 'fish' | 'powershell' | 'cmd';
 
-const SHELLS: {value: Shell; label: string;}[] = navigator.userAgent.includes('Windows')
+const SHELLS: {value: Shell; label: string;}[] = isWindows
   ? [{value: 'powershell', label: 'PowerShell'}, {value: 'cmd', label: 'CMD'}]
   : [{value: 'posix', label: 'bash / zsh'}, {value: 'fish', label: 'fish'}];
 
@@ -30,25 +31,16 @@ function proxyCommand(shell: Shell, port: number): string {
 export function TerminalSheet() {
   const port = useStore(s => s.status!.config.listenPort);
   const [shell, setShell] = useState<Shell>(SHELLS[0].value);
-  const [copied, copy] = useCopy();
   const command = proxyCommand(shell, port);
 
   return (
     <Sheet title={t.terminalTitle} hint={t.terminalHint}>
       <Segmented value={shell} options={SHELLS} onChange={setShell} />
-      <button
-        type='button'
-        onClick={() => copy(command)}
-        title={copied ? t.copied : t.copy}
-        className='group flex w-full items-start gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-left transition hover:border-accent/40'
-      >
+      <CopyButton value={command}>
         <code className='flex-1 font-mono text-[11.5px] leading-relaxed break-all text-text'>
           {command}
         </code>
-        <span className='mt-0.5'>
-          <CopyIcon copied={copied} />
-        </span>
-      </button>
+      </CopyButton>
     </Sheet>
   );
 }

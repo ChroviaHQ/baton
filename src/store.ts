@@ -13,12 +13,14 @@ import {
 
 const HISTORY_LENGTH = 60;
 
-export type ProbeState = {phase: 'running';} | {phase: 'done'; info: EgressInfo;} | {
-  phase: 'failed';
+export type AsyncState<T> = {status: 'pending';} | {status: 'succeeded'; value: T;} | {
+  status: 'failed';
   error: CommandError;
 };
 
-type SheetId = 'upstream' | 'landing' | 'terminal' | 'settings';
+export type HopRole = 'upstream' | 'landing';
+
+export type SheetId = HopRole | 'terminal' | 'settings';
 
 const SHEET_ERRORS: Record<string, SheetId> = {
   invalid_listen_port: 'settings',
@@ -46,12 +48,12 @@ type Store = {
   rateHistory: RateSample[];
   busy: boolean;
   error: CommandError | null;
-  chainProbe: ProbeState | null;
+  chainProbe: AsyncState<EgressInfo> | null;
   sheet: SheetId | null;
   sheetError: CommandError | null;
   init: () => Promise<() => void>;
   toggleRelay: () => Promise<void>;
-  saveConfig: (config: AppConfig) => Promise<CommandError | null>;
+  saveConfig: (patch: Partial<AppConfig>) => Promise<CommandError | null>;
   setUseAsSystemProxy: (value: boolean) => Promise<void>;
   probeChain: () => Promise<void>;
   openSheet: (sheet: SheetId) => void;
@@ -81,6 +83,9 @@ export const useStore = create<Store>((set, get) => {
       set({busy: false});
     }
   };
+
+  const updateConfig = (patch: Partial<AppConfig>) =>
+    runCommand(() => api.saveConfig({...get().status!.config, ...patch}));
 
   return {
     status: null,
@@ -126,8 +131,8 @@ export const useStore = create<Store>((set, get) => {
       }
     },
 
-    saveConfig: async config => {
-      const error = await runCommand(() => api.saveConfig(config));
+    saveConfig: async patch => {
+      const error = await updateConfig(patch);
       if (!error) {
         set({chainProbe: null});
       }
@@ -135,13 +140,7 @@ export const useStore = create<Store>((set, get) => {
     },
 
     setUseAsSystemProxy: async value => {
-      const {status} = get();
-      if (!status) {
-        return;
-      }
-      const error = await runCommand(() =>
-        api.saveConfig({...status.config, useAsSystemProxy: value})
-      );
+      const error = await updateConfig({useAsSystemProxy: value});
       if (error) {
         report(error);
       }
@@ -152,14 +151,14 @@ export const useStore = create<Store>((set, get) => {
       if (!status) {
         return;
       }
-      set({chainProbe: {phase: 'running'}, error: null});
+      set({chainProbe: {status: 'pending'}, error: null});
       try {
         const upstream = await resolveUpstream(status.config);
         const info = await api.probe([upstream, status.config.landing]);
-        set({chainProbe: {phase: 'done', info}});
+        set({chainProbe: {status: 'succeeded', value: info}});
       } catch (raw) {
         const error = toCommandError(raw);
-        set({chainProbe: {phase: 'failed', error}});
+        set({chainProbe: {status: 'failed', error}});
         report(error);
       }
     },

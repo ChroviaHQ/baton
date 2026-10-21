@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::config::{Hop, ProxyProtocol};
+use crate::hop::{Hop, ProxyProtocol};
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -55,43 +55,6 @@ impl ProxyEndpoints {
     }
 }
 
-#[cfg(windows)]
-fn parse_endpoint(value: &str) -> Option<(String, u16)> {
-    let value = value.trim();
-    let value = value.split_once("://").map_or(value, |(_, rest)| rest);
-    let value = value.trim_end_matches('/');
-    let (host, port) = value.rsplit_once(':')?;
-    let host = host.trim_start_matches('[').trim_end_matches(']');
-    let port = port.parse().ok().filter(|port| *port != 0)?;
-    (!host.is_empty()).then(|| (host.to_owned(), port))
-}
-
-#[cfg(windows)]
-fn parse_windows_proxy_server(value: &str) -> ProxyEndpoints {
-    if !value.contains('=') {
-        let endpoint = parse_endpoint(value);
-        return ProxyEndpoints { https: endpoint.clone(), http: endpoint, socks: None };
-    }
-    let mut endpoints = ProxyEndpoints::default();
-    for entry in value.split(';') {
-        let Some((scheme, address)) = entry.split_once('=') else {
-            continue;
-        };
-        let endpoint = parse_endpoint(address);
-        match scheme.trim().to_ascii_lowercase().as_str() {
-            "https" => endpoints.https = endpoint,
-            "http" => endpoints.http = endpoint,
-            "socks" | "socks5" => endpoints.socks = endpoint,
-            _ => {}
-        }
-    }
-    endpoints
-}
-
-pub fn current() -> Result<Option<Hop>, SystemProxyError> {
-    platform::current()
-}
-
 #[derive(Clone, Debug)]
 pub struct SystemProxy {
     backup_path: PathBuf,
@@ -120,7 +83,7 @@ impl SystemProxy {
     pub fn original_proxy(&self) -> Result<Option<Hop>, SystemProxyError> {
         match self.backup()? {
             Some(snapshot) => Ok(platform::endpoints(&snapshot).preferred_hop()),
-            None => current(),
+            None => platform::current(),
         }
     }
 

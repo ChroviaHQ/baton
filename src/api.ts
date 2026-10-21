@@ -37,13 +37,18 @@ export type EgressInfo = {
   latencyMs: number;
 };
 
-export type CommandError = {code: string; hop: number | null; detail: string;};
+export type CommandError = {
+  code: string;
+  hop: number | null;
+  detail: string;
+  reply: number | null;
+};
 
 export function toCommandError(error: unknown): CommandError {
   if (error && typeof error === 'object' && 'code' in error) {
     return error as CommandError;
   }
-  return {code: 'unknown', hop: null, detail: String(error)};
+  return {code: 'unknown', hop: null, detail: String(error), reply: null};
 }
 
 export const api = {

@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -18,55 +19,45 @@ const ICON_IS_TEMPLATE: bool = cfg!(target_os = "macos");
 pub struct Tray {
     toggle: MenuItem<Wry>,
     system_proxy: CheckMenuItem<Wry>,
-    labels: &'static Labels,
+    labels: Labels,
 }
 
+#[derive(Deserialize)]
+struct Locale {
+    tray: Labels,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Labels {
-    start: &'static str,
-    stop: &'static str,
-    system_proxy: &'static str,
-    quit: &'static str,
-    running: &'static str,
-    stopped: &'static str,
+    start: String,
+    stop: String,
+    system_proxy: String,
+    quit: String,
+    running: String,
+    stopped: String,
 }
 
-const ZH: Labels = Labels {
-    start: "启动中继",
-    stop: "停止中继",
-    system_proxy: "设为系统代理",
-    quit: "退出 Baton",
-    running: "Baton · 运行中",
-    stopped: "Baton · 已停止",
-};
-
-const EN: Labels = Labels {
-    start: "Start Relay",
-    stop: "Stop Relay",
-    system_proxy: "Use as System Proxy",
-    quit: "Quit Baton",
-    running: "Baton · Running",
-    stopped: "Baton · Stopped",
-};
-
-fn labels() -> &'static Labels {
-    match sys_locale::get_locale() {
-        Some(locale) if locale.starts_with("zh") => &ZH,
-        _ => &EN,
-    }
+fn labels() -> Labels {
+    let locale = match sys_locale::get_locale() {
+        Some(locale) if locale.starts_with("zh") => include_str!("../../src/locales/zh.json"),
+        _ => include_str!("../../src/locales/en.json"),
+    };
+    serde_json::from_str::<Locale>(locale).expect("bundled locale is valid").tray
 }
 
 pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
     let labels = labels();
-    let toggle = MenuItem::with_id(app, "toggle", labels.start, true, None::<&str>)?;
+    let toggle = MenuItem::with_id(app, "toggle", &labels.start, true, None::<&str>)?;
     let system_proxy = CheckMenuItem::with_id(
         app,
         "system_proxy",
-        labels.system_proxy,
+        &labels.system_proxy,
         true,
         status.config.use_as_system_proxy,
         None::<&str>,
     )?;
-    let quit = MenuItem::with_id(app, "quit", labels.quit, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", &labels.quit, true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[&toggle, &system_proxy, &PredefinedMenuItem::separator(app)?, &quit],
@@ -90,7 +81,7 @@ pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
                 ..
             } = event
             {
-                crate::show_main_window(tray.app_handle());
+                crate::window::show_main_window(tray.app_handle());
             }
         })
         .build(app)?;
@@ -102,8 +93,8 @@ pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
 
 impl Tray {
     pub fn sync(&self, app: &AppHandle, status: &Status) {
-        let labels = self.labels;
-        let _ = self.toggle.set_text(if status.running { labels.stop } else { labels.start });
+        let labels = &self.labels;
+        let _ = self.toggle.set_text(if status.running { &labels.stop } else { &labels.start });
         let _ = self.system_proxy.set_checked(status.config.use_as_system_proxy);
         if let Some(tray) = app.tray_by_id("main") {
             let icon = if status.running { RUNNING_ICON } else { IDLE_ICON };
@@ -112,9 +103,9 @@ impl Tray {
                 let _ = tray.set_icon_as_template(ICON_IS_TEMPLATE);
             }
             let _ = tray.set_tooltip(Some(if status.running {
-                labels.running
+                &labels.running
             } else {
-                labels.stopped
+                &labels.stopped
             }));
         }
     }

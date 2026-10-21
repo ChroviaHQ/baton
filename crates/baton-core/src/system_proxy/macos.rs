@@ -3,7 +3,7 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 
 use super::{ProxyEndpoints, SystemProxyError};
-use crate::config::Hop;
+use crate::hop::Hop;
 
 const KINDS: [&str; 3] = ["webproxy", "securewebproxy", "socksfirewallproxy"];
 

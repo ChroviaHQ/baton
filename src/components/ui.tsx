@@ -7,11 +7,11 @@ import {
 } from 'react';
 
 import type { CommandError } from '../api';
-import { describeError } from '../i18n';
+import { describeError, t } from '../i18n';
 
-export function Card({children, className = ''}: {children: ReactNode; className?: string;}) {
+export function Card({children}: {children: ReactNode;}) {
   return (
-    <section className={`rounded-2xl border border-line bg-surface shadow-card ${className}`}>
+    <section className='rounded-2xl border border-line bg-surface p-4 shadow-card'>
       {children}
     </section>
   );
@@ -81,12 +81,12 @@ function Switch(
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition disabled:opacity-50 ${
+      className={`relative h-5.5 w-9.5 shrink-0 rounded-full transition disabled:opacity-50 ${
         checked ? 'bg-accent' : 'bg-faint/40'
       }`}
     >
       <span
-        className={`absolute top-[3px] left-[3px] size-4 rounded-full bg-white shadow transition-transform ${
+        className={`absolute top-0.75 left-0.75 size-4 rounded-full bg-white shadow transition-transform ${
           checked ? 'translate-x-4' : ''
         }`}
       />
@@ -132,7 +132,7 @@ export function IconButton(
     <button
       type='button'
       {...props}
-      className={`grid size-[26px] shrink-0 place-items-center rounded-md text-muted transition hover:bg-surface-2 hover:text-text ${className}`}
+      className={`grid size-6.5 shrink-0 place-items-center rounded-md text-muted transition hover:bg-surface-2 hover:text-text ${className}`}
     >
       {children}
     </button>
@@ -168,9 +168,9 @@ export function ErrorNote({error}: {error: CommandError;}) {
   );
 }
 
-export function useCopy(): [boolean, (value: string) => Promise<void>] {
+export function CopyButton({value, children}: {value: string; children: ReactNode;}) {
   const [copied, setCopied] = useState(false);
-  const copy = async (value: string) => {
+  const copy = async () => {
     try {
       await navigator.clipboard.writeText(value);
     } catch {
@@ -179,11 +179,17 @@ export function useCopy(): [boolean, (value: string) => Promise<void>] {
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   };
-  return [copied, copy];
-}
-
-export function CopyIcon({copied}: {copied: boolean;}) {
-  return copied
-    ? <Check className='size-3.5 shrink-0 text-ok' />
-    : <Copy className='size-3.5 shrink-0 text-faint group-hover:text-accent' />;
+  return (
+    <button
+      type='button'
+      onClick={copy}
+      title={copied ? t.copied : t.copy}
+      className='group flex w-full items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-left transition hover:border-accent/40'
+    >
+      {children}
+      {copied
+        ? <Check className='size-3.5 shrink-0 text-ok' />
+        : <Copy className='size-3.5 shrink-0 text-faint group-hover:text-accent' />}
+    </button>
+  );
 }
