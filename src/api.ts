@@ -61,10 +61,14 @@ export const api = {
   takePendingError: () => invoke<CommandError | null>('take_pending_error'),
   getLaunchAtLogin: () => invoke<boolean>('get_launch_at_login'),
   setLaunchAtLogin: (enabled: boolean) => invoke<boolean>('set_launch_at_login', {enabled}),
+  pendingUpdate: () => invoke<string | null>('pending_update'),
+  installUpdate: () => invoke<void>('install_update'),
   onStatus: (handler: (status: Status) => void): Promise<UnlistenFn> =>
     listen<Status>('relay://status', event => handler(event.payload)),
   onStats: (handler: (stats: Stats) => void): Promise<UnlistenFn> =>
     listen<Stats>('relay://stats', event => handler(event.payload)),
+  onUpdate: (handler: (version: string) => void): Promise<UnlistenFn> =>
+    listen<string>('relay://update', event => handler(event.payload)),
   onError: (handler: (error: CommandError) => void): Promise<UnlistenFn> =>
     listen<CommandError>('relay://error', event => handler(event.payload)),
 };

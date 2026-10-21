@@ -4,6 +4,7 @@ mod error;
 mod events;
 mod relay;
 mod tray;
+mod update;
 mod window;
 
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
@@ -12,6 +13,7 @@ use tokio::sync::Mutex;
 
 use crate::events::{PendingError, publish, report_error, spawn_stats_ticker};
 use crate::relay::Relay;
+use crate::update::{PendingUpdate, spawn_update_checker};
 use crate::window::{apply_dock_visibility, prepare_main_window, show_main_window};
 
 const HIDDEN_ARG: &str = "--hidden";
@@ -55,6 +57,7 @@ pub fn run() {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::start_relay,
@@ -64,7 +67,9 @@ pub fn run() {
             commands::detect_system_proxy,
             commands::take_pending_error,
             commands::get_launch_at_login,
-            commands::set_launch_at_login
+            commands::set_launch_at_login,
+            commands::pending_update,
+            commands::install_update
         ])
         .setup(|app| {
             let data_dir = app.path().app_config_dir()?;
@@ -76,7 +81,9 @@ pub fn run() {
             app.manage(tray);
             app.manage::<RelayState>(Mutex::new(relay));
             app.manage(PendingError::default());
+            app.manage(PendingUpdate::default());
             spawn_stats_ticker(app.handle().clone());
+            spawn_update_checker(app.handle().clone());
             prepare_main_window(app.handle())?;
             if !std::env::args().any(|arg| arg == HIDDEN_ARG) {
                 show_main_window(app.handle());

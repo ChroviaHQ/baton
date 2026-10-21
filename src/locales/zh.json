@@ -70,6 +70,9 @@
     "不支持该命令",
     "不支持该地址类型"
   ],
+  "updateTo": "更新到 {version}",
+  "updating": "正在更新",
+  "updateHint": "下载并安装新版本，完成后自动重启",
   "errors": {
     "empty_host": "{hop}地址不能为空",
     "invalid_port": "{hop}端口无效",
@@ -93,6 +96,7 @@
     "timeout": "连接超时",
     "lookup_failed": "链路已连通，但 IP 查询服务返回错误：{detail}",
     "empty_chain": "未配置代理",
+    "update_failed": "更新失败：{detail}",
     "unknown": "发生错误：{detail}"
   },
   "tray": {

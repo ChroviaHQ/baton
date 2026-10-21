@@ -70,6 +70,9 @@
     "command not supported",
     "address type not supported"
   ],
+  "updateTo": "Update to {version}",
+  "updating": "Updating",
+  "updateHint": "Download and install the new version, then restart",
   "errors": {
     "empty_host": "Enter a host for {hop}.",
     "invalid_port": "Enter a valid port for {hop}.",
@@ -93,6 +96,7 @@
     "timeout": "The connection timed out.",
     "lookup_failed": "The chain is working, but the IP lookup service returned an error: {detail}",
     "empty_chain": "No proxies are configured.",
+    "update_failed": "Update failed: {detail}",
     "unknown": "An error occurred: {detail}"
   },
   "tray": {

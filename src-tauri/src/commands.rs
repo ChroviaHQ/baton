@@ -9,6 +9,7 @@ use crate::config::AppConfig;
 use crate::error::CommandError;
 use crate::events::{PendingError, publish};
 use crate::relay::Status;
+use crate::update::PendingUpdate;
 use crate::window::{apply_dock_visibility, show_main_window};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(12);
@@ -86,4 +87,31 @@ pub fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<bool, Comman
     let result = if enabled { manager.enable() } else { manager.disable() };
     result.map_err(|error| CommandError::new("launch_at_login_failed", error))?;
     get_launch_at_login(app)
+}
+
+#[tauri::command]
+pub fn pending_update(pending: State<'_, PendingUpdate>) -> Option<String> {
+    pending.0.lock().ok()?.as_ref().map(|update| update.version.clone())
+}
+
+#[tauri::command]
+pub async fn install_update(
+    app: AppHandle,
+    state: State<'_, RelayState>,
+    pending: State<'_, PendingUpdate>,
+) -> Result<(), CommandError> {
+    let update = pending
+        .0
+        .lock()
+        .ok()
+        .and_then(|pending| pending.clone())
+        .ok_or_else(|| update_failed("no update available"))?;
+    let bytes = update.download(|_, _| {}, || {}).await.map_err(update_failed)?;
+    stop_relay(app.clone(), state).await?;
+    update.install(bytes).map_err(update_failed)?;
+    app.restart()
+}
+
+fn update_failed(error: impl ToString) -> CommandError {
+    CommandError::new("update_failed", error)
 }

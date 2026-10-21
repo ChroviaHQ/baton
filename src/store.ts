@@ -51,7 +51,9 @@ type Store = {
   chainProbe: AsyncState<EgressInfo> | null;
   sheet: SheetId | null;
   sheetError: CommandError | null;
+  update: string | null;
   init: () => Promise<() => void>;
+  installUpdate: () => Promise<void>;
   toggleRelay: () => Promise<void>;
   saveConfig: (patch: Partial<AppConfig>) => Promise<CommandError | null>;
   setUseAsSystemProxy: (value: boolean) => Promise<void>;
@@ -92,6 +94,7 @@ export const useStore = create<Store>((set, get) => {
     chainProbe: null,
     sheet: null,
     sheetError: null,
+    update: null,
 
     init: async () => {
       const unlisten = await Promise.all([
@@ -103,17 +106,30 @@ export const useStore = create<Store>((set, get) => {
           }];
           set({stats, rateHistory});
         }),
+        api.onUpdate(update => set({update})),
         api.onError(error => {
           report(error);
           void api.takePendingError();
         }),
       ]);
-      const [status, pending] = await Promise.all([api.getStatus(), api.takePendingError()]);
-      set({status});
+      const [status, pending, update] = await Promise.all([
+        api.getStatus(),
+        api.takePendingError(),
+        api.pendingUpdate(),
+      ]);
+      set({status, update});
       if (pending) {
         report(pending);
       }
       return () => unlisten.forEach(fn => fn());
+    },
+
+    installUpdate: async () => {
+      try {
+        await api.installUpdate();
+      } catch (raw) {
+        report(toCommandError(raw));
+      }
     },
 
     toggleRelay: async () => {

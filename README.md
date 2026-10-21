@@ -30,10 +30,41 @@ Building requires Rust, Node.js 22 or later, and the [Tauri prerequisites](https
 
 ```sh
 npm install
-npm run tauri build
+npm run tauri build -- --no-bundle
 ```
 
 Use `npm run tauri dev` to run the app in development mode.
+
+## Releasing
+
+### Setup
+
+1. Generate the updater signing key, then put the contents of `~/.tauri/baton.key.pub` into `plugins.updater.pubkey` in [`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json):
+
+   ```sh
+   npx tauri signer generate -w ~/.tauri/baton.key
+   ```
+
+2. Add these secrets under **Settings** → **Secrets and variables** → **Actions**:
+
+   | Secret                               | Value                                                                    |
+   | ------------------------------------ | ------------------------------------------------------------------------ |
+   | `TAURI_SIGNING_PRIVATE_KEY`          | Contents of `~/.tauri/baton.key`                                         |
+   | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Key password, if any                                                     |
+   | `APPLE_CERTIFICATE`                  | Developer ID Application `.p12`, Base64-encoded                          |
+   | `APPLE_CERTIFICATE_PASSWORD`         | `.p12` export password                                                   |
+   | `APPLE_SIGNING_IDENTITY`             | Output of `security find-identity -v -p codesigning`                     |
+   | `APPLE_ID`                           | Apple ID email                                                           |
+   | `APPLE_PASSWORD`                     | App-specific password from appleid.apple.com                             |
+   | `APPLE_TEAM_ID`                      | Apple Developer Team ID                                                  |
+
+### Publishing
+
+```sh
+npm run release -- 0.2.0
+```
+
+This bumps the version, tags `v0.2.0`, and pushes. GitHub Actions then builds and signs both platforms into a draft release. Publish the draft, and installed copies will offer the update.
 
 ## License
 
