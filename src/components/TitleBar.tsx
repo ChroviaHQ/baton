@@ -1,7 +1,8 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ArrowUpCircle, Loader2, Minus, Settings, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import { api, type TitleBarInsets } from '../api';
 import { format, t } from '../i18n';
 import { isMac } from '../platform';
 import { useStore } from '../store';
@@ -65,16 +66,31 @@ function UpdateButton({version}: {version: string;}) {
   );
 }
 
+function useTitleBarInsets(): TitleBarInsets | null {
+  const [insets, setInsets] = useState<TitleBarInsets | null>(null);
+  useEffect(() => {
+    if (!isMac) {
+      return;
+    }
+    void api.getTitleBarInsets().then(value => value && setInsets(value), () => {});
+    const unlisten = api.onTitleBarInsets(setInsets);
+    return () => void unlisten.then(dispose => dispose());
+  }, []);
+  return insets;
+}
+
 export function TitleBar() {
   const running = useStore(s => s.status?.running ?? false);
   const openSheet = useStore(s => s.openSheet);
   const update = useStore(s => s.update);
+  const insets = useTitleBarInsets();
   return (
     <header
       data-tauri-drag-region
       className={`flex h-12.5 shrink-0 items-center justify-between pr-3 ${
         isMac ? 'pl-22.5' : 'pl-4.5'
       }`}
+      style={insets ? {height: insets.height, paddingLeft: insets.leading} : undefined}
     >
       <div data-tauri-drag-region className='pointer-events-none flex items-center gap-1.5'>
         <Logo size={22} animated={running} />

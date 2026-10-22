@@ -5,7 +5,54 @@ pub fn show_main_window(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+        #[cfg(target_os = "macos")]
+        publish_title_bar_insets(&window);
     }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TitleBarInsets {
+    height: f64,
+    leading: f64,
+}
+
+#[cfg(target_os = "macos")]
+pub fn title_bar_insets(window: &tauri::WebviewWindow) -> Option<TitleBarInsets> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSWindow, NSWindowButton};
+
+    MainThreadMarker::new()?;
+    let ns_window = unsafe { &*window.ns_window().ok()?.cast::<NSWindow>() };
+    if !ns_window.isVisible() {
+        return None;
+    }
+    ns_window.display();
+    let content = ns_window.contentView()?;
+    let close = ns_window.standardWindowButton(NSWindowButton::CloseButton)?;
+    let zoom = ns_window.standardWindowButton(NSWindowButton::ZoomButton)?;
+    let close = close.convertRect_toView(close.bounds(), Some(&content));
+    let zoom = zoom.convertRect_toView(zoom.bounds(), Some(&content));
+    let center = close.origin.y + close.size.height / 2.0;
+    let center_from_top =
+        if content.isFlipped() { center } else { content.bounds().size.height - center };
+    Some(TitleBarInsets {
+        height: center_from_top * 2.0,
+        leading: zoom.origin.x + zoom.size.width + close.origin.x,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn publish_title_bar_insets(window: &tauri::WebviewWindow) {
+    use tauri::Emitter;
+
+    let target = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        if let Some(insets) = title_bar_insets(&target) {
+            let _ = target.emit("window://title-bar-insets", insets);
+        }
+    });
 }
 
 #[cfg(target_os = "macos")]

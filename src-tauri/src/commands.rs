@@ -69,6 +69,12 @@ pub async fn detect_system_proxy(state: State<'_, RelayState>) -> Result<Hop, Co
     relay.detect_upstream(relay.config().listen_port)
 }
 
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn get_title_bar_insets(window: tauri::WebviewWindow) -> Option<crate::window::TitleBarInsets> {
+    crate::window::title_bar_insets(&window)
+}
+
 #[tauri::command]
 pub fn take_pending_error(pending: State<'_, PendingError>) -> Option<CommandError> {
     pending.0.lock().ok()?.take()

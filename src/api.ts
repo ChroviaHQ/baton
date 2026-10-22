@@ -27,6 +27,8 @@ export type AppConfig = {
 
 export type Status = {config: AppConfig; running: boolean; lanIp: string | null;};
 
+export type TitleBarInsets = {height: number; leading: number;};
+
 export type Stats = {active: number; failed: number; upRate: number; downRate: number;};
 
 export type EgressInfo = {
@@ -59,6 +61,7 @@ export const api = {
   saveConfig: (config: AppConfig) => invoke<Status>('save_config', {config}),
   probe: (hops: Hop[]) => invoke<EgressInfo>('probe', {hops}),
   detectSystemProxy: () => invoke<Hop>('detect_system_proxy'),
+  getTitleBarInsets: () => invoke<TitleBarInsets | null>('get_title_bar_insets'),
   takePendingError: () => invoke<CommandError | null>('take_pending_error'),
   getLaunchAtLogin: () => invoke<boolean>('get_launch_at_login'),
   setLaunchAtLogin: (enabled: boolean) => invoke<boolean>('set_launch_at_login', {enabled}),
@@ -70,6 +73,8 @@ export const api = {
     listen<Stats>('relay://stats', event => handler(event.payload)),
   onUpdate: (handler: (version: string) => void): Promise<UnlistenFn> =>
     listen<string>('relay://update', event => handler(event.payload)),
+  onTitleBarInsets: (handler: (insets: TitleBarInsets) => void): Promise<UnlistenFn> =>
+    listen<TitleBarInsets>('window://title-bar-insets', event => handler(event.payload)),
   onError: (handler: (error: CommandError) => void): Promise<UnlistenFn> =>
     listen<CommandError>('relay://error', event => handler(event.payload)),
 };
