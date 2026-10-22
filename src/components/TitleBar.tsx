@@ -2,7 +2,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ArrowUpCircle, Loader2, Minus, Settings, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { api, type TitleBarInsets } from '../api';
+import { api, type TitleBarMetrics } from '../api';
 import { format, t } from '../i18n';
 import { isMac } from '../platform';
 import { useStore } from '../store';
@@ -66,37 +66,42 @@ function UpdateButton({version}: {version: string;}) {
   );
 }
 
-function useTitleBarInsets(): TitleBarInsets | null {
-  const [insets, setInsets] = useState<TitleBarInsets | null>(null);
+function useTitleBarMetrics(): TitleBarMetrics | null {
+  const [metrics, setMetrics] = useState<TitleBarMetrics | null>(null);
   useEffect(() => {
     if (!isMac) {
       return;
     }
-    void api.getTitleBarInsets().then(value => value && setInsets(value), () => {});
-    const unlisten = api.onTitleBarInsets(setInsets);
+    void api.getTitleBarMetrics().then(value => value && setMetrics(value), () => {});
+    const unlisten = api.onTitleBarMetrics(setMetrics);
     return () => void unlisten.then(dispose => dispose());
   }, []);
-  return insets;
+  return metrics;
 }
 
 export function TitleBar() {
   const running = useStore(s => s.status?.running ?? false);
   const openSheet = useStore(s => s.openSheet);
   const update = useStore(s => s.update);
-  const insets = useTitleBarInsets();
+  const metrics = useTitleBarMetrics();
   return (
     <header
       data-tauri-drag-region
-      className={`flex h-12.5 shrink-0 items-center justify-between pr-3 ${
-        isMac ? 'pl-22.5' : 'pl-4.5'
-      }`}
-      style={insets ? {height: insets.height, paddingLeft: insets.leading} : undefined}
+      className={`flex h-12.5 shrink-0 items-center gap-3 pr-3 ${isMac ? '' : 'pl-4.5'}`}
+      style={metrics ? {height: metrics.height} : undefined}
     >
+      {isMac && (
+        <div
+          data-tauri-drag-region
+          className='w-19.5 shrink-0 self-stretch'
+          style={metrics ? {width: metrics.controlsWidth} : undefined}
+        />
+      )}
       <div data-tauri-drag-region className='pointer-events-none flex items-center gap-1.5'>
         <Logo size={22} animated={running} />
         <span className='text-[13.5px] font-semibold tracking-tight'>Baton</span>
       </div>
-      <div className='flex items-center gap-1.5'>
+      <div className='ml-auto flex items-center gap-1.5'>
         {update ? <UpdateButton version={update} /> : <StatusPill running={running} />}
         <IconButton title={t.settings} onClick={() => openSheet('settings')}>
           <Settings className='size-3.75' />

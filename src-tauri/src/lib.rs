@@ -68,7 +68,7 @@ pub fn run() {
             commands::probe,
             commands::detect_system_proxy,
             #[cfg(target_os = "macos")]
-            commands::get_title_bar_insets,
+            commands::get_title_bar_metrics,
             commands::take_pending_error,
             commands::get_launch_at_login,
             commands::set_launch_at_login,

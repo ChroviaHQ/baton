@@ -6,20 +6,20 @@ pub fn show_main_window(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
         #[cfg(target_os = "macos")]
-        publish_title_bar_insets(&window);
+        publish_title_bar_metrics(&window);
     }
 }
 
 #[cfg(target_os = "macos")]
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TitleBarInsets {
+pub struct TitleBarMetrics {
     height: f64,
-    leading: f64,
+    controls_width: f64,
 }
 
 #[cfg(target_os = "macos")]
-pub fn title_bar_insets(window: &tauri::WebviewWindow) -> Option<TitleBarInsets> {
+pub fn title_bar_metrics(window: &tauri::WebviewWindow) -> Option<TitleBarMetrics> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSWindow, NSWindowButton};
 
@@ -37,20 +37,20 @@ pub fn title_bar_insets(window: &tauri::WebviewWindow) -> Option<TitleBarInsets>
     let center = close.origin.y + close.size.height / 2.0;
     let center_from_top =
         if content.isFlipped() { center } else { content.bounds().size.height - center };
-    Some(TitleBarInsets {
+    Some(TitleBarMetrics {
         height: center_from_top * 2.0,
-        leading: zoom.origin.x + zoom.size.width + close.origin.x,
+        controls_width: zoom.origin.x + zoom.size.width,
     })
 }
 
 #[cfg(target_os = "macos")]
-fn publish_title_bar_insets(window: &tauri::WebviewWindow) {
+fn publish_title_bar_metrics(window: &tauri::WebviewWindow) {
     use tauri::Emitter;
 
     let target = window.clone();
     let _ = window.run_on_main_thread(move || {
-        if let Some(insets) = title_bar_insets(&target) {
-            let _ = target.emit("window://title-bar-insets", insets);
+        if let Some(metrics) = title_bar_metrics(&target) {
+            let _ = target.emit("window://title-bar-metrics", metrics);
         }
     });
 }

@@ -71,8 +71,10 @@ pub async fn detect_system_proxy(state: State<'_, RelayState>) -> Result<Hop, Co
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn get_title_bar_insets(window: tauri::WebviewWindow) -> Option<crate::window::TitleBarInsets> {
-    crate::window::title_bar_insets(&window)
+pub fn get_title_bar_metrics(
+    window: tauri::WebviewWindow,
+) -> Option<crate::window::TitleBarMetrics> {
+    crate::window::title_bar_metrics(&window)
 }
 
 #[tauri::command]
