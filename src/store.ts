@@ -20,12 +20,13 @@ export type AsyncState<T> = {status: 'pending';} | {status: 'succeeded'; value: 
 
 export type HopRole = 'upstream' | 'landing';
 
-export type SheetId = HopRole | 'terminal' | 'settings';
+export type SheetId = HopRole | 'local' | 'settings';
 
 const SHEET_ERRORS: Record<string, SheetId> = {
-  invalid_listen_port: 'settings',
-  port_in_use: 'settings',
-  bind_failed: 'settings',
+  invalid_listen_port: 'local',
+  port_in_use: 'local',
+  bind_failed: 'local',
+  invalid_bypass: 'settings',
   system_proxy_not_set: 'upstream',
   system_proxy_is_baton: 'upstream',
   system_proxy_read_failed: 'upstream',

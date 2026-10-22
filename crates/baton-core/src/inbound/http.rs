@@ -5,9 +5,9 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use super::InboundError;
+use super::{InboundError, connect_target};
 use crate::address::TargetAddr;
-use crate::dial::{DialError, dial_timeout};
+use crate::dial::DialError;
 use crate::server::ServerState;
 use crate::tunnel::tunnel;
 
@@ -70,7 +70,7 @@ pub(super) async fn serve(
         (target, None, prefix)
     };
 
-    match dial_timeout(&shared.hops, &target, shared.connect_timeout).await {
+    match connect_target(&shared, &target).await {
         Ok(remote) => {
             if let Some(reply) = reply {
                 client.write_all(reply).await?;

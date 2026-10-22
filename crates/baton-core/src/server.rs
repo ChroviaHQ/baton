@@ -8,6 +8,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use crate::bypass_list::BypassList;
 use crate::hop::Hop;
 use crate::inbound;
 
@@ -15,6 +16,7 @@ use crate::inbound;
 pub struct ServerConfig {
     pub listen: SocketAddr,
     pub hops: Vec<Hop>,
+    pub bypass: BypassList,
     pub connect_timeout: Duration,
 }
 
@@ -36,6 +38,7 @@ pub(crate) struct Counters {
 
 pub(crate) struct ServerState {
     pub(crate) hops: Vec<Hop>,
+    pub(crate) bypass: BypassList,
     pub(crate) connect_timeout: Duration,
     pub(crate) counters: Counters,
 }
@@ -52,6 +55,7 @@ impl Server {
         let local_addr = listener.local_addr()?;
         let shared = Arc::new(ServerState {
             hops: config.hops,
+            bypass: config.bypass,
             connect_timeout: config.connect_timeout,
             counters: Counters::default(),
         });

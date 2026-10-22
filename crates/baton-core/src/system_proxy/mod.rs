@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::bypass_list::BypassList;
 use crate::hop::{Hop, ProxyProtocol};
 
 #[cfg(target_os = "macos")]
@@ -15,17 +16,6 @@ use macos as platform;
 use windows as platform;
 
 use platform::Snapshot;
-
-const BYPASS: &[&str] = &[
-    "localhost",
-    "127.0.0.1",
-    "::1",
-    "*.local",
-    "10.0.0.0/8",
-    "172.16.0.0/12",
-    "192.168.0.0/16",
-    "169.254.0.0/16",
-];
 
 #[derive(Debug, thiserror::Error)]
 pub enum SystemProxyError {
@@ -69,7 +59,12 @@ impl SystemProxy {
         self.backup_path.exists()
     }
 
-    pub fn apply(&self, host: &str, port: u16) -> Result<(), SystemProxyError> {
+    pub fn apply(
+        &self,
+        host: &str,
+        port: u16,
+        bypass: &BypassList,
+    ) -> Result<(), SystemProxyError> {
         if !self.is_applied() {
             if let Some(parent) = self.backup_path.parent() {
                 fs::create_dir_all(parent)?;
@@ -77,7 +72,8 @@ impl SystemProxy {
             let snapshot = platform::snapshot()?;
             fs::write(&self.backup_path, serde_json::to_vec_pretty(&snapshot)?)?;
         }
-        platform::apply(host, port, BYPASS)
+        let entries: Vec<&str> = bypass.entries().iter().map(String::as_str).collect();
+        platform::apply(host, port, &entries)
     }
 
     pub fn original_proxy(&self) -> Result<Option<Hop>, SystemProxyError> {

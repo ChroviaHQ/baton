@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::net::TcpStream;
 
 use crate::address::TargetAddr;
-use crate::dial::DialError;
+use crate::dial::{DialError, dial, dial_direct};
 use crate::server::ServerState;
 
 mod http;
@@ -35,4 +35,15 @@ pub(crate) async fn serve(client: TcpStream, shared: Arc<ServerState>) -> Result
     } else {
         http::serve(client, shared).await
     }
+}
+
+async fn connect_target(shared: &ServerState, target: &TargetAddr) -> Result<TcpStream, DialError> {
+    let stream = async {
+        if shared.bypass.matches(target) {
+            dial_direct(target).await
+        } else {
+            dial(&shared.hops, target).await
+        }
+    };
+    tokio::time::timeout(shared.connect_timeout, stream).await.map_err(|_| DialError::Timeout)?
 }

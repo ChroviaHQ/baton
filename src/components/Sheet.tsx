@@ -10,7 +10,7 @@ export function Sheet(
     title: string;
     hint?: string;
     children: ReactNode;
-    onSave?: () => Promise<CommandError | null>;
+    onSave: () => Promise<CommandError | null>;
   },
 ) {
   const closeSheet = useStore(s => s.closeSheet);
@@ -29,9 +29,6 @@ export function Sheet(
   }, [closeSheet]);
 
   const submit = async () => {
-    if (!onSave) {
-      return;
-    }
     setSaving(true);
     setError(null);
     const result = await onSave();
@@ -67,12 +64,10 @@ export function Sheet(
           </div>
         )}
         <footer className='flex justify-end gap-2 p-4'>
-          <Button onClick={closeSheet}>{onSave ? t.cancel : t.close}</Button>
-          {onSave && (
-            <Button type='submit' variant='primary' loading={saving} disabled={saving}>
-              {t.save}
-            </Button>
-          )}
+          <Button onClick={closeSheet}>{t.cancel}</Button>
+          <Button type='submit' variant='primary' loading={saving} disabled={saving}>
+            {t.save}
+          </Button>
         </footer>
       </form>
     </div>

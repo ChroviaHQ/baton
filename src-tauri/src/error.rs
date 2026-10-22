@@ -43,6 +43,7 @@ impl CommandError {
             DialError::NoHops => Self::new("empty_chain", error),
             DialError::Timeout => Self::new("timeout", error),
             DialError::Unreachable(_) => Self::new("hop_unreachable", error).with_hop(0),
+            DialError::DirectUnreachable(_) => Self::new("unknown", error),
             DialError::Handshake { hop, source } => Self::handshake(hop, source, hop_count),
         }
     }

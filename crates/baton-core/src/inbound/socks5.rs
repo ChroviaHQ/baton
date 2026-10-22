@@ -5,9 +5,9 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use super::InboundError;
+use super::{InboundError, connect_target};
 use crate::address::TargetAddr;
-use crate::dial::{DialError, dial_timeout};
+use crate::dial::DialError;
 use crate::handshake::HandshakeError;
 use crate::server::ServerState;
 use crate::tunnel::tunnel;
@@ -43,7 +43,7 @@ pub(super) async fn serve(
         return Err(InboundError::Protocol("only SOCKS5 CONNECT is supported"));
     }
 
-    match dial_timeout(&shared.hops, &target, shared.connect_timeout).await {
+    match connect_target(&shared, &target).await {
         Ok(remote) => {
             socks5_reply(&mut client, 0x00).await?;
             Ok(tunnel(client, remote, &shared.counters, &[]).await?)
@@ -79,7 +79,7 @@ async fn read_socks5_addr(
             let port = client.read_u16().await?;
             let host = String::from_utf8(host)
                 .map_err(|_| InboundError::Protocol("SOCKS5 domain is not UTF-8"))?;
-            TargetAddr::Domain(host, port)
+            TargetAddr::new(&host, port)
         }
         _ => return Ok(None),
     };
@@ -97,7 +97,10 @@ fn socks5_code(error: &DialError, hop_count: usize) -> u8 {
         {
             *code
         }
-        DialError::Timeout => 0x04,
+        DialError::DirectUnreachable(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
+            0x05
+        }
+        DialError::Timeout | DialError::DirectUnreachable(_) => 0x04,
         DialError::Unreachable(_) | DialError::Handshake { .. } | DialError::NoHops => 0x01,
     }
 }

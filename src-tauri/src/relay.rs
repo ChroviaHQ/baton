@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use baton_core::system_proxy::SystemProxy;
-use baton_core::{Hop, Server, ServerConfig, StatsSnapshot};
+use baton_core::{BypassList, Hop, Server, ServerConfig, StatsSnapshot};
 use serde::Serialize;
 
 use crate::config::{AppConfig, UpstreamMode};
@@ -70,8 +70,9 @@ impl Relay {
     pub async fn start(&mut self) -> Result<(), CommandError> {
         if self.server.is_none() {
             validate(&self.config, false)?;
+            let bypass = parse_bypass(&self.config)?;
             let hops = self.resolve_hops(&self.config)?;
-            self.server = Some(start_server(&self.config, hops).await?);
+            self.server = Some(start_server(&self.config, hops, bypass).await?);
         }
         self.reconcile_system_proxy(false).await
     }
@@ -87,13 +88,16 @@ impl Relay {
 
     pub async fn apply_config(&mut self, config: AppConfig) -> Result<(), CommandError> {
         let port_changed = config.listen_port != self.config.listen_port;
+        let bypass_changed = config.bypass != self.config.bypass;
         let restart = self.server.is_some()
             && (port_changed
+                || bypass_changed
                 || config.allow_lan != self.config.allow_lan
                 || config.upstream_mode != self.config.upstream_mode
                 || config.upstream != self.config.upstream
                 || config.landing != self.config.landing);
         validate(&config, !restart)?;
+        let bypass = parse_bypass(&config)?;
         let hops = restart.then(|| self.resolve_hops(&config)).transpose()?;
         config
             .save(&self.config_path)
@@ -103,7 +107,7 @@ impl Relay {
             if let Some(server) = self.server.take() {
                 server.stop().await;
             }
-            match start_server(&self.config, hops).await {
+            match start_server(&self.config, hops, bypass).await {
                 Ok(server) => self.server = Some(server),
                 Err(error) => {
                     let _ = self.reconcile_system_proxy(false).await;
@@ -111,7 +115,7 @@ impl Relay {
                 }
             }
         }
-        self.reconcile_system_proxy(port_changed).await
+        self.reconcile_system_proxy(port_changed || bypass_changed).await
     }
 
     pub fn detect_upstream(&self, listen_port: u16) -> Result<Hop, CommandError> {
@@ -141,13 +145,14 @@ impl Relay {
         self.server = None;
     }
 
-    async fn reconcile_system_proxy(&self, port_changed: bool) -> Result<(), CommandError> {
+    async fn reconcile_system_proxy(&self, reapply: bool) -> Result<(), CommandError> {
         let desired = self.server.is_some() && self.config.use_as_system_proxy;
         let active = self.system_proxy.is_applied();
         let system_proxy = self.system_proxy.clone();
         let port = self.config.listen_port;
-        let task = if desired && (!active || port_changed) {
-            tokio::task::spawn_blocking(move || system_proxy.apply("127.0.0.1", port))
+        let task = if desired && (!active || reapply) {
+            let bypass = parse_bypass(&self.config)?;
+            tokio::task::spawn_blocking(move || system_proxy.apply("127.0.0.1", port, &bypass))
         } else if !desired && active {
             tokio::task::spawn_blocking(move || system_proxy.restore())
         } else {
@@ -174,6 +179,10 @@ fn validate(config: &AppConfig, allow_unfilled: bool) -> Result<(), CommandError
     Ok(())
 }
 
+fn parse_bypass(config: &AppConfig) -> Result<BypassList, CommandError> {
+    BypassList::parse(&config.bypass).map_err(|entry| CommandError::new("invalid_bypass", entry))
+}
+
 fn is_loopback(host: &str) -> bool {
     host.eq_ignore_ascii_case("localhost")
         || host
@@ -190,13 +199,18 @@ fn lan_ip() -> Option<IpAddr> {
     (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
 }
 
-async fn start_server(config: &AppConfig, hops: Vec<Hop>) -> Result<Server, CommandError> {
+async fn start_server(
+    config: &AppConfig,
+    hops: Vec<Hop>,
+    bypass: BypassList,
+) -> Result<Server, CommandError> {
     Server::start(ServerConfig {
         listen: SocketAddr::from((
             if config.allow_lan { Ipv4Addr::UNSPECIFIED } else { Ipv4Addr::LOCALHOST },
             config.listen_port,
         )),
         hops,
+        bypass,
         connect_timeout: CONNECT_TIMEOUT,
     })
     .await

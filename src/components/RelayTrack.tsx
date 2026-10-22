@@ -104,8 +104,8 @@ export function RelayTrack() {
           label={t.local}
           value={`:${config.listenPort}`}
           active={running}
-          title={t.terminalTitle}
-          onClick={() => openSheet('terminal')}
+          title={t.editLocal}
+          onClick={() => openSheet('local')}
         />
         <TrackNode
           icon={Server}

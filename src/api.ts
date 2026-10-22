@@ -22,6 +22,7 @@ export type AppConfig = {
   useAsSystemProxy: boolean;
   startOnLaunch: boolean;
   showInDock: boolean;
+  bypass: string[];
 };
 
 export type Status = {config: AppConfig; running: boolean; lanIp: string | null;};

@@ -1,4 +1,5 @@
 mod address;
+mod bypass_list;
 mod dial;
 mod handshake;
 mod hop;
@@ -8,6 +9,7 @@ mod server;
 pub mod system_proxy;
 mod tunnel;
 
+pub use bypass_list::BypassList;
 pub use dial::DialError;
 pub use handshake::HandshakeError;
 pub use hop::{Hop, HopError, ProxyProtocol};

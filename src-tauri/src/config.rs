@@ -24,6 +24,7 @@ pub struct AppConfig {
     pub use_as_system_proxy: bool,
     pub start_on_launch: bool,
     pub show_in_dock: bool,
+    pub bypass: Vec<String>,
 }
 
 impl Default for AppConfig {
@@ -42,6 +43,7 @@ impl Default for AppConfig {
             use_as_system_proxy: false,
             start_on_launch: false,
             show_in_dock: false,
+            bypass: Vec::new(),
         }
     }
 }

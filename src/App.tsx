@@ -2,10 +2,10 @@ import { useEffect } from 'react';
 
 import { ErrorToast } from './components/ErrorToast';
 import { HopSheet } from './components/HopSheet';
+import { LocalSheet } from './components/LocalSheet';
 import { RelayTrack } from './components/RelayTrack';
 import { SettingsSheet } from './components/SettingsSheet';
 import { SystemProxyCard } from './components/SystemProxyCard';
-import { TerminalSheet } from './components/TerminalSheet';
 import { TitleBar } from './components/TitleBar';
 import { TrafficCard } from './components/TrafficCard';
 import { type SheetId, useStore } from './store';
@@ -15,8 +15,8 @@ function ActiveSheet({sheet}: {sheet: SheetId;}) {
     case 'upstream':
     case 'landing':
       return <HopSheet key={sheet} role={sheet} />;
-    case 'terminal':
-      return <TerminalSheet />;
+    case 'local':
+      return <LocalSheet />;
     case 'settings':
       return <SettingsSheet />;
   }

@@ -1,5 +1,4 @@
 use std::io;
-use std::time::Duration;
 
 use tokio::net::TcpStream;
 
@@ -21,16 +20,13 @@ pub enum DialError {
     },
     #[error("timed out while building the chain")]
     Timeout,
+    #[error("cannot reach the target directly: {0}")]
+    DirectUnreachable(#[source] io::Error),
 }
 
 pub async fn dial(hops: &[Hop], target: &TargetAddr) -> Result<TcpStream, DialError> {
     let first = hops.first().ok_or(DialError::NoHops)?;
-    let mut stream = match first.address() {
-        TargetAddr::Ip(addr) => TcpStream::connect(addr).await,
-        TargetAddr::Domain(host, port) => TcpStream::connect((host.as_str(), port)).await,
-    }
-    .map_err(DialError::Unreachable)?;
-    let _ = stream.set_nodelay(true);
+    let mut stream = connect(&first.address()).await.map_err(DialError::Unreachable)?;
     for (index, hop) in hops.iter().enumerate() {
         let next = hops.get(index + 1).map_or_else(|| target.clone(), Hop::address);
         handshake::connect_via(&mut stream, hop, &next)
@@ -40,10 +36,15 @@ pub async fn dial(hops: &[Hop], target: &TargetAddr) -> Result<TcpStream, DialEr
     Ok(stream)
 }
 
-pub async fn dial_timeout(
-    hops: &[Hop],
-    target: &TargetAddr,
-    timeout: Duration,
-) -> Result<TcpStream, DialError> {
-    tokio::time::timeout(timeout, dial(hops, target)).await.map_err(|_| DialError::Timeout)?
+pub async fn dial_direct(target: &TargetAddr) -> Result<TcpStream, DialError> {
+    connect(target).await.map_err(DialError::DirectUnreachable)
+}
+
+async fn connect(target: &TargetAddr) -> io::Result<TcpStream> {
+    let stream = match target {
+        TargetAddr::Ip(addr) => TcpStream::connect(addr).await,
+        TargetAddr::Domain(host, port) => TcpStream::connect((host.as_str(), *port)).await,
+    }?;
+    let _ = stream.set_nodelay(true);
+    Ok(stream)
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { api, toCommandError } from '../api';
-import { formatEndpoint, parsePort } from '../format';
+import { formatEndpoint } from '../format';
 import { t } from '../i18n';
 import { isMac } from '../platform';
 import { useStore } from '../store';
@@ -26,10 +26,10 @@ export function SettingsSheet() {
   const lanIp = useStore(s => s.status!.lanIp);
   const saveConfig = useStore(s => s.saveConfig);
   const setSheetError = useStore(s => s.setSheetError);
-  const [listenPort, setListenPort] = useState(config.listenPort);
   const [allowLan, setAllowLan] = useState(config.allowLan);
   const [showInDock, setShowInDock] = useState(config.showInDock);
   const [startOnLaunch, setStartOnLaunch] = useState(config.startOnLaunch);
+  const [bypassText, setBypassText] = useState(config.bypass.join(', '));
   const [launchAtLogin, setLaunchAtLogin] = useState<boolean | null>(null);
   const initialLaunchAtLogin = useRef<boolean | null>(null);
 
@@ -41,7 +41,12 @@ export function SettingsSheet() {
   }, [setSheetError]);
 
   const save = async () => {
-    const error = await saveConfig({listenPort, allowLan, showInDock, startOnLaunch});
+    const error = await saveConfig({
+      allowLan,
+      showInDock,
+      startOnLaunch,
+      bypass: bypassText.split(/[\s,]+/).filter(Boolean),
+    });
     if (error || launchAtLogin === null || launchAtLogin === initialLaunchAtLogin.current) {
       return error;
     }
@@ -55,21 +60,13 @@ export function SettingsSheet() {
 
   return (
     <Sheet title={t.settings} onSave={save}>
-      <TextField
-        label={t.listenPort}
-        className='w-28'
-        inputMode='numeric'
-        value={listenPort || ''}
-        placeholder='1080'
-        onChange={event => setListenPort(parsePort(event.target.value))}
-      />
       <ToggleRow
         title={t.allowLan}
         hint={t.allowLanHint}
         checked={allowLan}
         onChange={setAllowLan}
       />
-      {allowLan && <LanAddress ip={lanIp} port={listenPort || config.listenPort} />}
+      {allowLan && <LanAddress ip={lanIp} port={config.listenPort} />}
       <ToggleRow
         title={t.launchAtLogin}
         hint={t.launchAtLoginHint}
@@ -90,6 +87,13 @@ export function SettingsSheet() {
         hint={t.startOnLaunchHint}
         checked={startOnLaunch}
         onChange={setStartOnLaunch}
+      />
+      <TextField
+        label={t.bypass}
+        hint={t.bypassHint}
+        value={bypassText}
+        placeholder='*.corp.example, 100.64.0.0/10'
+        onChange={event => setBypassText(event.target.value)}
       />
     </Sheet>
   );

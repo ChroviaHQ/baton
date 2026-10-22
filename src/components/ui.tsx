@@ -43,8 +43,9 @@ export function Segmented<T extends string>(
 }
 
 export function TextField(
-  {label, className = '', trailing, ...props}: InputHTMLAttributes<HTMLInputElement> & {
+  {label, hint, className = '', trailing, ...props}: InputHTMLAttributes<HTMLInputElement> & {
     label: string;
+    hint?: string;
     trailing?: ReactNode;
   },
 ) {
@@ -61,6 +62,7 @@ export function TextField(
         />
         {trailing}
       </span>
+      {hint && <span className='mt-1 block text-[11px] leading-4 text-muted'>{hint}</span>}
     </label>
   );
 }
