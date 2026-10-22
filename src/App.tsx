@@ -36,7 +36,7 @@ export function App() {
     <div className='flex h-full flex-col'>
       <TitleBar />
       {ready && (
-        <main className='flex-1 space-y-3 overflow-y-auto px-4.5 pb-4.5'>
+        <main className='flex flex-1 flex-col gap-3 overflow-y-auto px-4.5 pb-4.5'>
           <RelayTrack />
           <TrafficCard />
           <SystemProxyCard />

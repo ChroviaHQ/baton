@@ -50,19 +50,17 @@ export function Sheet(
           void submit();
         }}
       >
-        <header className='flex items-start justify-between gap-3 px-4 pt-4'>
-          <div>
+        <header className='flex flex-col gap-0.5 px-4 pt-4'>
+          <div className='flex items-center justify-between gap-3'>
             <h2 className='text-[14px] font-semibold tracking-tight'>{title}</h2>
-            {hint && <p className='mt-0.5 text-[11.5px] leading-snug text-muted'>{hint}</p>}
+            <CloseButton onClick={closeSheet} />
           </div>
-          <CloseButton onClick={closeSheet} />
+          {hint && <p className='text-[11.5px] leading-snug text-muted'>{hint}</p>}
         </header>
-        <div className='space-y-3 px-4 pt-3.5'>{children}</div>
-        {error && (
-          <div className='px-4 pt-3'>
-            <ErrorNote error={error} />
-          </div>
-        )}
+        <div className='flex flex-col gap-3 px-4 pt-3.5'>
+          {children}
+          {error && <ErrorNote error={error} />}
+        </div>
         <footer className='flex justify-end gap-2 p-4'>
           <Button onClick={closeSheet}>{t.cancel}</Button>
           <Button type='submit' variant='primary' loading={saving} disabled={saving}>

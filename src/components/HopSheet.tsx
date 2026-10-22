@@ -38,22 +38,30 @@ function DetectedProxy({detection}: {detection: AsyncState<Hop> | null;}) {
     return <ErrorNote error={detection.error} />;
   }
   return (
-    <div className='h-13 rounded-lg border border-line bg-surface-2 px-3 py-2'>
+    <div className='flex flex-col gap-1 rounded-lg border border-line bg-surface-2 px-3 py-2'>
       <div className='text-[11px] leading-4 text-muted'>{t.detectedProxy}</div>
-      {detection?.status === 'pending' && (
-        <div className='mt-1 flex items-center gap-1.5 text-[12px] leading-5 text-muted'>
-          <Loader2 className='size-3.5 animate-spin' />
-          {t.detecting}
-        </div>
-      )}
-      {detection?.status === 'succeeded' && (
-        <div className='mt-1 flex items-center gap-2 font-mono text-[12.5px] leading-5'>
-          <span className='rounded bg-accent-soft px-1.5 text-[10.5px] font-semibold text-accent'>
-            {PROTOCOL_LABELS[detection.value.protocol]}
-          </span>
-          {formatEndpoint(detection.value.host, detection.value.port)}
-        </div>
-      )}
+      <div
+        className={`flex h-lh items-center gap-2 text-[12px] leading-5 ${
+          detection?.status === 'pending' ? 'text-muted' : ''
+        }`}
+      >
+        {detection?.status === 'pending' && (
+          <>
+            <Loader2 className='size-3.5 animate-spin' />
+            {t.detecting}
+          </>
+        )}
+        {detection?.status === 'succeeded' && (
+          <>
+            <span className='rounded bg-accent-soft px-1.5 text-[10.5px] font-semibold text-accent'>
+              {PROTOCOL_LABELS[detection.value.protocol]}
+            </span>
+            <span className='font-mono text-[12.5px]'>
+              {formatEndpoint(detection.value.host, detection.value.port)}
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -125,6 +133,7 @@ function HopFields(
           trailing={
             <IconButton
               tabIndex={-1}
+              title={revealPassword ? t.hidePassword : t.showPassword}
               onClick={() => setRevealPassword(value => !value)}
               className='mr-0.5'
             >

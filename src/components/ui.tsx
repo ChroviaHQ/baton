@@ -9,9 +9,11 @@ import {
 import type { CommandError } from '../api';
 import { describeError, t } from '../i18n';
 
-export function Card({children}: {children: ReactNode;}) {
+export function Card({className = '', children}: {className?: string; children: ReactNode;}) {
   return (
-    <section className='rounded-2xl border border-line bg-surface p-4 shadow-card'>
+    <section
+      className={`flex flex-col rounded-2xl border border-line bg-surface p-4 shadow-card ${className}`}
+    >
       {children}
     </section>
   );
@@ -30,6 +32,7 @@ export function Segmented<T extends string>(
         <button
           key={option.value}
           type='button'
+          aria-pressed={option.value === value}
           onClick={() => onChange(option.value)}
           className={`rounded-md px-2.5 py-1 text-[11.5px] font-medium transition ${
             option.value === value ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text'
@@ -50,8 +53,8 @@ export function TextField(
   },
 ) {
   return (
-    <label className={`block ${className}`}>
-      <span className='mb-1 block text-[11px] font-medium text-muted'>{label}</span>
+    <label className={`flex flex-col gap-1 ${className}`}>
+      <span className='text-[11px] font-medium text-muted'>{label}</span>
       <span className='flex items-center rounded-lg border border-line bg-surface-2 transition focus-within:border-accent focus-within:ring-3 focus-within:ring-accent-soft'>
         <input
           {...props}
@@ -62,7 +65,7 @@ export function TextField(
         />
         {trailing}
       </span>
-      {hint && <span className='mt-1 block text-[11px] leading-4 text-muted'>{hint}</span>}
+      {hint && <span className='text-[11px] leading-4 text-muted'>{hint}</span>}
     </label>
   );
 }
@@ -83,13 +86,13 @@ function Switch(
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-5.5 w-9.5 shrink-0 rounded-full transition disabled:opacity-50 ${
+      className={`flex h-5.5 w-9.5 shrink-0 items-center rounded-full p-0.75 transition disabled:opacity-50 ${
         checked ? 'bg-accent' : 'bg-faint/40'
       }`}
     >
       <span
-        className={`absolute top-0.75 left-0.75 size-4 rounded-full bg-white shadow transition-transform ${
-          checked ? 'translate-x-4' : ''
+        className={`size-4 rounded-full bg-white shadow transition-transform ${
+          checked ? 'translate-x-full' : ''
         }`}
       />
     </button>
@@ -141,9 +144,13 @@ export function IconButton(
   );
 }
 
+export function LineAligned({children}: {children: ReactNode;}) {
+  return <span className='flex h-lh shrink-0 items-center'>{children}</span>;
+}
+
 export function CloseButton({onClick}: {onClick: () => void;}) {
   return (
-    <IconButton title={t.close} onClick={onClick} className='-mt-1 -mr-1.5'>
+    <IconButton title={t.close} onClick={onClick}>
       <X className='size-4' />
     </IconButton>
   );
@@ -160,9 +167,9 @@ export function ToggleRow(
 ) {
   return (
     <div className='flex items-center justify-between gap-4'>
-      <div className='min-w-0'>
+      <div className='flex min-w-0 flex-col gap-0.5'>
         <div className='text-[12.5px] leading-5 font-medium'>{title}</div>
-        <div className='mt-0.5 text-[11px] leading-4 text-muted'>{hint}</div>
+        <div className='text-[11px] leading-4 text-muted'>{hint}</div>
       </div>
       <Switch label={title} checked={checked} disabled={disabled} onChange={onChange} />
     </div>
@@ -172,8 +179,10 @@ export function ToggleRow(
 export function ErrorNote({error}: {error: CommandError;}) {
   return (
     <div className='flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-[11.5px] leading-snug text-danger'>
-      <AlertTriangle className='mt-px size-3.5 shrink-0' />
-      <span>{describeError(error)}</span>
+      <LineAligned>
+        <AlertTriangle className='size-3.5' />
+      </LineAligned>
+      <span className='wrap-anywhere'>{describeError(error)}</span>
     </div>
   );
 }

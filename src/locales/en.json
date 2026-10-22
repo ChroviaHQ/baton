@@ -37,6 +37,8 @@
   "port": "Port",
   "username": "Username",
   "password": "Password",
+  "showPassword": "Show password",
+  "hidePassword": "Hide password",
   "optional": "optional",
   "probe": "Test",
   "probing": "Testing",

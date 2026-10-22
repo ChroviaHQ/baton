@@ -28,7 +28,7 @@ function TrackNode(
       type='button'
       title={title}
       onClick={onClick}
-      className='group relative z-10 flex min-w-0 flex-col items-center text-center'
+      className='group row-span-2 grid min-w-0 grid-rows-subgrid justify-items-center text-center'
     >
       <span className='rounded-full bg-surface'>
         <span
@@ -43,13 +43,15 @@ function TrackNode(
           {loading ? <Loader2 className='size-4.5 animate-spin' /> : <Icon className='size-4.5' />}
         </span>
       </span>
-      <span className='mt-2 text-[11px] leading-4 font-medium text-muted'>{label}</span>
-      <span
-        className={`mt-0.5 w-full truncate px-0.5 text-[11px] leading-4 font-medium tabular-nums ${
-          value ? 'text-text' : 'text-faint'
-        }`}
-      >
-        {value || t.notSet}
+      <span className='flex w-full flex-col items-center gap-0.5'>
+        <span className='text-[11px] leading-4 font-medium text-muted'>{label}</span>
+        <span
+          className={`w-full truncate px-0.5 text-[11px] leading-4 font-medium tabular-nums ${
+            value ? 'text-text' : 'text-faint'
+          }`}
+        >
+          {value || t.notSet}
+        </span>
       </span>
     </button>
   );
@@ -68,17 +70,19 @@ function upstreamLabel(config: AppConfig): string {
 
 function TrackLine({active}: {active: boolean;}) {
   return (
-    <svg className='absolute top-5 left-[12.5%] h-px w-3/4 overflow-visible'>
-      <line
-        x1='0'
-        y1='0'
-        x2='100%'
-        y2='0'
-        strokeWidth='2'
-        strokeLinecap='round'
-        className={active ? 'relay-flow stroke-accent' : 'stroke-line'}
-      />
-    </svg>
+    <div className='col-start-1 row-start-1 grid grid-cols-8'>
+      <svg className='col-start-2 col-end-8 h-px w-full self-center overflow-visible'>
+        <line
+          x1='0'
+          y1='0'
+          x2='100%'
+          y2='0'
+          strokeWidth='2'
+          strokeLinecap='round'
+          className={active ? 'relay-flow stroke-accent' : 'stroke-line'}
+        />
+      </svg>
+    </div>
   );
 }
 
@@ -96,57 +100,59 @@ export function RelayTrack() {
     : t.egressPrompt;
 
   return (
-    <Card>
-      <div className='relative grid grid-cols-4'>
+    <Card className='gap-4'>
+      <div className='grid grid-rows-[auto_auto] gap-y-2'>
         <TrackLine active={running} />
-        <TrackNode
-          icon={Laptop}
-          label={t.local}
-          value={`:${config.listenPort}`}
-          active={running}
-          title={t.editLocal}
-          onClick={() => openSheet('local')}
-        />
-        <TrackNode
-          icon={Server}
-          label={t.upstream}
-          value={upstreamLabel(config)}
-          active={running}
-          title={t.editUpstream}
-          onClick={() => openSheet('upstream')}
-        />
-        <TrackNode
-          icon={MapPin}
-          label={t.landing}
-          value={config.landing.host}
-          active={running}
-          title={t.editLanding}
-          onClick={() => openSheet('landing')}
-        />
-        <TrackNode
-          icon={Globe}
-          label={t.egress}
-          value={egress}
-          active={running}
-          loading={probe?.status === 'pending'}
-          failed={probe?.status === 'failed'}
-          title={probe?.status === 'succeeded'
-            ? formatLocation([
-              probe.value.ip,
-              probe.value.country,
-              probe.value.city,
-              probe.value.org,
-            ])
-            : t.probeChainHint}
-          onClick={probeChain}
-        />
+        <div className='col-start-1 row-[1/span_2] grid grid-cols-4 grid-rows-subgrid'>
+          <TrackNode
+            icon={Laptop}
+            label={t.local}
+            value={`:${config.listenPort}`}
+            active={running}
+            title={t.editLocal}
+            onClick={() => openSheet('local')}
+          />
+          <TrackNode
+            icon={Server}
+            label={t.upstream}
+            value={upstreamLabel(config)}
+            active={running}
+            title={t.editUpstream}
+            onClick={() => openSheet('upstream')}
+          />
+          <TrackNode
+            icon={MapPin}
+            label={t.landing}
+            value={config.landing.host}
+            active={running}
+            title={t.editLanding}
+            onClick={() => openSheet('landing')}
+          />
+          <TrackNode
+            icon={Globe}
+            label={t.egress}
+            value={egress}
+            active={running}
+            loading={probe?.status === 'pending'}
+            failed={probe?.status === 'failed'}
+            title={probe?.status === 'succeeded'
+              ? formatLocation([
+                probe.value.ip,
+                probe.value.country,
+                probe.value.city,
+                probe.value.org,
+              ])
+              : t.probeChainHint}
+            onClick={probeChain}
+          />
+        </div>
       </div>
 
       <button
         type='button'
         onClick={toggleRelay}
         disabled={busy}
-        className={`mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl text-[13.5px] font-semibold transition active:scale-[0.99] disabled:opacity-70 ${
+        className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl text-[13.5px] font-semibold transition active:scale-[0.99] disabled:opacity-70 ${
           running
             ? 'border border-line bg-surface-2 text-text hover:border-danger/40 hover:text-danger'
             : 'bg-accent text-on-accent hover:brightness-110'

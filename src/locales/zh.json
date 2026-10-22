@@ -37,6 +37,8 @@
   "port": "端口",
   "username": "用户名",
   "password": "密码",
+  "showPassword": "显示密码",
+  "hidePassword": "隐藏密码",
   "optional": "可选",
   "probe": "检测",
   "probing": "检测中",

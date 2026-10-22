@@ -55,7 +55,7 @@ function TrafficChart() {
 export function TrafficCard() {
   const stats = useStore(s => s.stats);
   return (
-    <Card>
+    <Card className='gap-3'>
       <div className='flex h-5 items-center gap-4 font-mono text-[13px] font-semibold tabular-nums'>
         <span className='flex items-center gap-1' title={t.download}>
           <ArrowDown className='size-3.5 text-accent' />
@@ -71,9 +71,7 @@ export function TrafficCard() {
           {!!stats?.failed && <span className='text-danger'>/ {stats.failed}</span>}
         </span>
       </div>
-      <div className='pt-3'>
-        <TrafficChart />
-      </div>
+      <TrafficChart />
     </Card>
   );
 }
