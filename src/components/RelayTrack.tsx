@@ -28,7 +28,7 @@ function TrackNode(
       type='button'
       title={title}
       onClick={onClick}
-      className='group row-span-2 grid min-w-0 grid-rows-subgrid justify-items-center text-center'
+      className='group row-span-2 grid min-w-0 grid-cols-1 grid-rows-subgrid justify-items-center text-center'
     >
       <span className='rounded-full bg-surface'>
         <span
