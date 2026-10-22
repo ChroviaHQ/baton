@@ -49,7 +49,7 @@
   "useAsSystemProxy": "Use as system proxy",
   "useAsSystemProxyHint": "Routes system traffic through this chain. Original settings are restored on stop or quit.",
   "allowLan": "Allow LAN connections",
-  "allowLanHint": "Lets other devices on the local network use this chain. The endpoint has no authentication, so enable it only on trusted networks.",
+  "allowLanHint": "Lets LAN devices use this chain without authentication. Enable only on trusted networks.",
   "lanAddress": "LAN address",
   "noLanIp": "No LAN address found",
   "launchAtLogin": "Launch at login",

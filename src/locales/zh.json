@@ -49,7 +49,7 @@
   "useAsSystemProxy": "设为系统代理",
   "useAsSystemProxyHint": "系统流量经由此链路转发，停止或退出时恢复原有设置",
   "allowLan": "允许局域网连接",
-  "allowLanHint": "局域网内其他设备可通过本机使用此链路。该入口不需要认证，请仅在可信网络中开启",
+  "allowLanHint": "局域网设备可使用此链路，无需认证，仅在可信网络开启",
   "lanAddress": "局域网地址",
   "noLanIp": "未检测到局域网地址",
   "launchAtLogin": "开机自启",
