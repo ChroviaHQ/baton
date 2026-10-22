@@ -101,12 +101,16 @@
     "lookup_failed": "The chain is working, but the IP lookup service returned an error: {detail}",
     "empty_chain": "No proxies are configured.",
     "update_failed": "Update failed: {detail}",
+    "update_check_failed": "Couldn't check for updates. Check your network connection and try again.",
     "unknown": "An error occurred: {detail}"
   },
   "tray": {
     "start": "Start Relay",
     "stop": "Stop Relay",
     "systemProxy": "Use as System Proxy",
+    "checkUpdate": "Check for Updates",
+    "checkingUpdate": "Checking for Updates…",
+    "upToDate": "Baton {version} is up to date.",
     "quit": "Quit Baton",
     "running": "Baton · Running",
     "stopped": "Baton · Stopped"

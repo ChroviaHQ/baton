@@ -1,9 +1,9 @@
-use serde::Deserialize;
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Wry};
 
+use crate::locale::labels;
 use crate::relay::Status;
 
 #[cfg(target_os = "macos")]
@@ -19,33 +19,9 @@ const ICON_IS_TEMPLATE: bool = cfg!(target_os = "macos");
 pub struct Tray {
     toggle: MenuItem<Wry>,
     system_proxy: CheckMenuItem<Wry>,
-    labels: Labels,
+    check_update: MenuItem<Wry>,
     idle_icon: Image<'static>,
     running_icon: Image<'static>,
-}
-
-#[derive(Deserialize)]
-struct Locale {
-    tray: Labels,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Labels {
-    start: String,
-    stop: String,
-    system_proxy: String,
-    quit: String,
-    running: String,
-    stopped: String,
-}
-
-fn labels() -> Labels {
-    let locale = match sys_locale::get_locale() {
-        Some(locale) if locale.starts_with("zh") => include_str!("../../src/locales/zh.json"),
-        _ => include_str!("../../src/locales/en.json"),
-    };
-    serde_json::from_str::<Locale>(locale).expect("bundled locale is valid").tray
 }
 
 pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
@@ -59,10 +35,12 @@ pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
         status.config.use_as_system_proxy,
         None::<&str>,
     )?;
+    let check_update =
+        MenuItem::with_id(app, "check_update", &labels.check_update, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", &labels.quit, true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[&toggle, &system_proxy, &PredefinedMenuItem::separator(app)?, &quit],
+        &[&toggle, &system_proxy, &PredefinedMenuItem::separator(app)?, &check_update, &quit],
     )?;
 
     let idle_icon = Image::from_bytes(IDLE_ICON)?;
@@ -75,6 +53,7 @@ pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "toggle" => crate::spawn_toggle_relay(app.clone()),
             "system_proxy" => crate::spawn_toggle_system_proxy(app.clone()),
+            "check_update" => crate::update::spawn_manual_update_check(app.clone()),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -90,14 +69,24 @@ pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
         })
         .build(app)?;
 
-    let tray = Tray { toggle, system_proxy, labels, idle_icon, running_icon };
+    let tray = Tray { toggle, system_proxy, check_update, idle_icon, running_icon };
     tray.sync(app, status);
     Ok(tray)
 }
 
 impl Tray {
+    pub fn set_checking_update(&self, checking: bool) {
+        let labels = labels();
+        let _ = self.check_update.set_text(if checking {
+            &labels.checking_update
+        } else {
+            &labels.check_update
+        });
+        let _ = self.check_update.set_enabled(!checking);
+    }
+
     pub fn sync(&self, app: &AppHandle, status: &Status) {
-        let labels = &self.labels;
+        let labels = labels();
         let _ = self.toggle.set_text(if status.running { &labels.stop } else { &labels.start });
         let _ = self.system_proxy.set_checked(status.config.use_as_system_proxy);
         if let Some(tray) = app.tray_by_id("main") {

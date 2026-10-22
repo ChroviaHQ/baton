@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod error;
 mod events;
+mod locale;
 mod relay;
 mod tray;
 mod update;
@@ -58,6 +59,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::start_relay,
