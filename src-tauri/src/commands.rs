@@ -109,7 +109,8 @@ pub async fn install_update(
     let bytes = update.download(|_, _| {}, || {}).await.map_err(update_failed)?;
     stop_relay(app.clone(), state).await?;
     update.install(bytes).map_err(update_failed)?;
-    app.restart()
+    app.request_restart();
+    Ok(())
 }
 
 fn update_failed(error: impl ToString) -> CommandError {
