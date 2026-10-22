@@ -139,14 +139,6 @@ input {
   animation: logo-run 1.4s linear infinite;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .relay-flow,
-  .pulse-ring,
-  .logo-run {
-    animation: none;
-  }
-}
-
 @keyframes sheet-up {
   from {
     transform: translateY(100%);
