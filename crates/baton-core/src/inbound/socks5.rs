@@ -14,7 +14,7 @@ use crate::tunnel::tunnel;
 
 pub(super) async fn serve(
     mut client: TcpStream,
-    shared: Arc<ServerState>,
+    state: Arc<ServerState>,
 ) -> Result<(), InboundError> {
     let mut header = [0u8; 2];
     client.read_exact(&mut header).await?;
@@ -31,34 +31,31 @@ pub(super) async fn serve(
     if request[0] != 0x05 {
         return Err(InboundError::Protocol("malformed SOCKS5 request"));
     }
-    let target = match read_socks5_addr(&mut client, request[3]).await? {
+    let target = match read_addr(&mut client, request[3]).await? {
         Some(target) => target,
         None => {
-            socks5_reply(&mut client, 0x08).await?;
+            reply(&mut client, 0x08).await?;
             return Err(InboundError::Protocol("unsupported SOCKS5 address type"));
         }
     };
     if request[1] != 0x01 {
-        socks5_reply(&mut client, 0x07).await?;
+        reply(&mut client, 0x07).await?;
         return Err(InboundError::Protocol("only SOCKS5 CONNECT is supported"));
     }
 
-    match connect_target(&shared, &target).await {
+    match connect_target(&state, &target).await {
         Ok(remote) => {
-            socks5_reply(&mut client, 0x00).await?;
-            Ok(tunnel(client, remote, &shared.counters, &[]).await?)
+            reply(&mut client, 0x00).await?;
+            Ok(tunnel(client, remote, &state.counters, &[]).await?)
         }
         Err(source) => {
-            socks5_reply(&mut client, socks5_code(&source, shared.hops.len())).await?;
+            reply(&mut client, dial_error_code(&source, state.hops.len())).await?;
             Err(InboundError::Dial { target, source })
         }
     }
 }
 
-async fn read_socks5_addr(
-    client: &mut TcpStream,
-    atyp: u8,
-) -> Result<Option<TargetAddr>, InboundError> {
+async fn read_addr(client: &mut TcpStream, atyp: u8) -> Result<Option<TargetAddr>, InboundError> {
     let target = match atyp {
         0x01 => {
             let mut ip = [0u8; 4];
@@ -86,21 +83,21 @@ async fn read_socks5_addr(
     Ok(Some(target))
 }
 
-async fn socks5_reply(client: &mut TcpStream, code: u8) -> io::Result<()> {
+async fn reply(client: &mut TcpStream, code: u8) -> io::Result<()> {
     client.write_all(&[0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await
 }
 
-fn socks5_code(error: &DialError, hop_count: usize) -> u8 {
+fn dial_error_code(error: &DialError, hop_count: usize) -> u8 {
     match error {
         DialError::Handshake { hop, source: HandshakeError::Socks5Reply(code) }
             if *hop + 1 == hop_count =>
         {
             *code
         }
-        DialError::DirectUnreachable(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
+        DialError::TargetUnreachable(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
             0x05
         }
-        DialError::Timeout | DialError::DirectUnreachable(_) => 0x04,
-        DialError::Unreachable(_) | DialError::Handshake { .. } | DialError::NoHops => 0x01,
+        DialError::Timeout | DialError::TargetUnreachable(_) => 0x04,
+        DialError::HopUnreachable(_) | DialError::Handshake { .. } | DialError::EmptyChain => 0x01,
     }
 }

@@ -16,9 +16,10 @@ pub(crate) async fn tunnel(
 ) -> io::Result<()> {
     if !prefix.is_empty() {
         remote.write_all(prefix).await?;
-        counters.up.fetch_add(prefix.len() as u64, Ordering::Relaxed);
+        counters.up_bytes.fetch_add(prefix.len() as u64, Ordering::Relaxed);
     }
-    let mut client = MeteredStream { inner: client, read: &counters.up, written: &counters.down };
+    let mut client =
+        MeteredStream { inner: client, read: &counters.up_bytes, written: &counters.down_bytes };
     tokio::io::copy_bidirectional(&mut client, &mut remote).await?;
     Ok(())
 }

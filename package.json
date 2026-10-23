@@ -13,7 +13,7 @@
     "build": "tsc --noEmit && vite build",
     "tauri": "tauri",
     "format": "dprint fmt && cargo fmt",
-    "checkFormatting": "dprint check && cargo fmt --check",
+    "format:check": "dprint check && cargo fmt --check",
     "release": "node scripts/release.mjs"
   },
   "dependencies": {

@@ -2,13 +2,13 @@ use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TargetAddr {
+pub(crate) enum TargetAddr {
     Ip(SocketAddr),
     Domain(String, u16),
 }
 
 impl TargetAddr {
-    pub fn new(host: &str, port: u16) -> Self {
+    pub(crate) fn new(host: &str, port: u16) -> Self {
         let bare = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(host);
         match bare.parse::<IpAddr>() {
             Ok(ip) => Self::Ip(SocketAddr::new(ip, port)),
@@ -16,7 +16,7 @@ impl TargetAddr {
         }
     }
 
-    pub fn parse_authority(authority: &str, default_port: u16) -> Option<Self> {
+    pub(crate) fn parse_authority(authority: &str, default_port: u16) -> Option<Self> {
         let authority = authority.trim();
         if authority.is_empty() {
             return None;
@@ -43,7 +43,7 @@ impl TargetAddr {
         }
     }
 
-    pub fn port(&self) -> u16 {
+    pub(crate) fn port(&self) -> u16 {
         match self {
             Self::Ip(addr) => addr.port(),
             Self::Domain(_, port) => *port,

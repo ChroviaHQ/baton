@@ -28,7 +28,7 @@ pub enum HandshakeError {
     InvalidInput(&'static str),
 }
 
-pub async fn connect_via<S>(
+pub(crate) async fn connect_via<S>(
     stream: &mut S,
     hop: &Hop,
     target: &TargetAddr,
@@ -60,7 +60,7 @@ where
     stream.write_all(request.as_bytes()).await?;
     stream.flush().await?;
 
-    let head = read_head_exact(stream).await?;
+    let head = read_response_head(stream).await?;
     let mut headers = [httparse::EMPTY_HEADER; 64];
     let mut response = httparse::Response::new(&mut headers);
     match response.parse(&head) {
@@ -76,7 +76,7 @@ where
     }
 }
 
-async fn read_head_exact<S>(stream: &mut S) -> Result<Vec<u8>, HandshakeError>
+async fn read_response_head<S>(stream: &mut S) -> Result<Vec<u8>, HandshakeError>
 where
     S: AsyncRead + Unpin,
 {

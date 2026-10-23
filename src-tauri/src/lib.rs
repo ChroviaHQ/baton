@@ -8,42 +8,18 @@ mod tray;
 mod update;
 mod window;
 
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
-use crate::events::{PendingError, publish, report_error, spawn_stats_ticker};
-use crate::relay::Relay;
+use crate::commands::spawn_toggle_relay;
+use crate::events::{PendingError, spawn_stats_ticker};
+use crate::relay::{Relay, RelayState};
+use crate::tray::Tray;
 use crate::update::{PendingUpdate, spawn_update_checker};
 use crate::window::{apply_dock_visibility, prepare_main_window, show_main_window};
 
 const HIDDEN_ARG: &str = "--hidden";
-
-pub(crate) type RelayState = Mutex<Relay>;
-
-pub(crate) fn spawn_toggle_relay(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let state = app.state::<RelayState>();
-        let mut relay = state.lock().await;
-        let result = if relay.is_running() { relay.stop().await } else { relay.start().await };
-        if let Err(error) = publish(&app, &relay, result) {
-            report_error(&app, error);
-        }
-    });
-}
-
-pub(crate) fn spawn_toggle_system_proxy(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let state = app.state::<RelayState>();
-        let mut relay = state.lock().await;
-        let mut config = relay.config().clone();
-        config.use_as_system_proxy = !config.use_as_system_proxy;
-        let result = relay.apply_config(config).await;
-        if let Err(error) = publish(&app, &relay, result) {
-            report_error(&app, error);
-        }
-    });
-}
 
 pub fn run() {
     tracing_subscriber::fmt()
@@ -65,14 +41,14 @@ pub fn run() {
             commands::start_relay,
             commands::stop_relay,
             commands::save_config,
-            commands::probe,
+            commands::probe_egress,
             commands::detect_system_proxy,
             #[cfg(target_os = "macos")]
             commands::get_title_bar_metrics,
             commands::take_pending_error,
             commands::get_launch_at_login,
             commands::set_launch_at_login,
-            commands::pending_update,
+            commands::get_pending_update,
             commands::install_update
         ])
         .setup(|app| {
@@ -81,7 +57,7 @@ pub fn run() {
             relay.recover_system_proxy();
             let start_on_launch = relay.config().start_on_launch;
             apply_dock_visibility(app.handle(), relay.config().show_in_dock);
-            let tray = tray::build(app.handle(), &relay.status())?;
+            let tray = Tray::new(app.handle(), &relay.status())?;
             app.manage(tray);
             app.manage::<RelayState>(Mutex::new(relay));
             app.manage(PendingError::default());

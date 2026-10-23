@@ -2,6 +2,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::address::TargetAddr;
 
+#[derive(Debug, thiserror::Error)]
+pub enum HopError {
+    #[error("host is empty")]
+    EmptyHost,
+    #[error("port is zero")]
+    InvalidPort,
+    #[error("username or password is longer than 255 bytes")]
+    CredentialsTooLong,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProxyProtocol {
@@ -20,16 +30,6 @@ pub struct Hop {
     pub password: String,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum HopError {
-    #[error("host is empty")]
-    EmptyHost,
-    #[error("port is zero")]
-    ZeroPort,
-    #[error("username or password is longer than 255 bytes")]
-    CredentialsTooLong,
-}
-
 impl Hop {
     pub(crate) fn address(&self) -> TargetAddr {
         TargetAddr::new(self.host.trim(), self.port)
@@ -44,7 +44,7 @@ impl Hop {
             return Err(HopError::EmptyHost);
         }
         if self.port == 0 {
-            return Err(HopError::ZeroPort);
+            return Err(HopError::InvalidPort);
         }
         if self.protocol == ProxyProtocol::Socks5
             && (self.username.len() > 255 || self.password.len() > 255)

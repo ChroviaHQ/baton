@@ -11,7 +11,7 @@ import {
   type UpstreamMode,
 } from '../api';
 import { formatEndpoint, formatLocation, parsePort } from '../format';
-import { format, t } from '../i18n';
+import { interpolate, t } from '../i18n';
 import { type AsyncState, type HopRole, useStore } from '../store';
 import { Sheet } from './Sheet';
 import { Button, ErrorNote, IconButton, Segmented, TextField } from './ui';
@@ -84,7 +84,7 @@ function ProbeResult({probe}: {probe: AsyncState<EgressInfo> | null;}) {
         </div>
       </div>
       <span className='shrink-0 font-mono text-muted'>
-        {format(t.latency, {value: info.latencyMs})}
+        {interpolate(t.latency, {value: info.latencyMs})}
       </span>
     </div>
   );
@@ -183,7 +183,7 @@ export function HopSheet({role}: {role: HopRole;}) {
       const hops = isUpstream
         ? [await resolveUpstream({...config, upstreamMode: mode, upstream: hop})]
         : [await resolveUpstream(config), hop];
-      setProbe({status: 'succeeded', value: await api.probe(hops)});
+      setProbe({status: 'succeeded', value: await api.probeEgress(hops)});
     } catch (raw) {
       setProbe({status: 'failed', error: toCommandError(raw)});
     }

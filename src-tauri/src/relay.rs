@@ -3,14 +3,16 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use baton_core::system_proxy::SystemProxy;
-use baton_core::{BypassList, Hop, Server, ServerConfig, StatsSnapshot};
+use baton_core::{BypassList, Hop, Server, ServerConfig, StatsSnapshot, SystemProxy};
 use serde::Serialize;
+use tokio::sync::Mutex;
 
 use crate::config::{AppConfig, UpstreamMode};
 use crate::error::CommandError;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
+pub type RelayState = Mutex<Relay>;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,17 +71,17 @@ impl Relay {
 
     pub async fn start(&mut self) -> Result<(), CommandError> {
         if self.server.is_none() {
-            validate(&self.config, false)?;
-            let bypass = parse_bypass(&self.config)?;
+            self.config.validate()?;
+            let bypass = self.config.bypass_list()?;
             let hops = self.resolve_hops(&self.config)?;
             self.server = Some(start_server(&self.config, hops, bypass).await?);
         }
-        self.reconcile_system_proxy(false).await
+        self.reconcile_system_proxy().await
     }
 
     pub async fn stop(&mut self) -> Result<(), CommandError> {
         let server = self.server.take();
-        let result = self.reconcile_system_proxy(false).await;
+        let result = self.reconcile_system_proxy().await;
         if let Some(server) = server {
             server.stop().await;
         }
@@ -87,17 +89,15 @@ impl Relay {
     }
 
     pub async fn apply_config(&mut self, config: AppConfig) -> Result<(), CommandError> {
-        let port_changed = config.listen_port != self.config.listen_port;
-        let bypass_changed = config.bypass != self.config.bypass;
         let restart = self.server.is_some()
-            && (port_changed
-                || bypass_changed
+            && (config.listen_port != self.config.listen_port
+                || config.bypass != self.config.bypass
                 || config.allow_lan != self.config.allow_lan
                 || config.upstream_mode != self.config.upstream_mode
                 || config.upstream != self.config.upstream
                 || config.landing != self.config.landing);
-        validate(&config, !restart)?;
-        let bypass = parse_bypass(&config)?;
+        config.validate()?;
+        let bypass = config.bypass_list()?;
         let hops = restart.then(|| self.resolve_hops(&config)).transpose()?;
         config
             .save(&self.config_path)
@@ -110,15 +110,15 @@ impl Relay {
             match start_server(&self.config, hops, bypass).await {
                 Ok(server) => self.server = Some(server),
                 Err(error) => {
-                    let _ = self.reconcile_system_proxy(false).await;
+                    let _ = self.reconcile_system_proxy().await;
                     return Err(error);
                 }
             }
         }
-        self.reconcile_system_proxy(port_changed || bypass_changed).await
+        self.reconcile_system_proxy().await
     }
 
-    pub fn detect_upstream(&self, listen_port: u16) -> Result<Hop, CommandError> {
+    pub fn detect_system_proxy(&self, listen_port: u16) -> Result<Hop, CommandError> {
         let hop = self
             .system_proxy
             .original_proxy()
@@ -130,14 +130,6 @@ impl Relay {
         Ok(hop)
     }
 
-    fn resolve_hops(&self, config: &AppConfig) -> Result<Vec<Hop>, CommandError> {
-        let upstream = match config.upstream_mode {
-            UpstreamMode::Manual => config.upstream.clone(),
-            UpstreamMode::System => self.detect_upstream(config.listen_port)?,
-        };
-        Ok(vec![upstream, config.landing.clone()])
-    }
-
     pub fn shutdown_blocking(&mut self) {
         if let Err(error) = self.system_proxy.restore() {
             tracing::error!(%error, "cannot restore system proxy on exit");
@@ -145,15 +137,23 @@ impl Relay {
         self.server = None;
     }
 
-    async fn reconcile_system_proxy(&self, reapply: bool) -> Result<(), CommandError> {
-        let desired = self.server.is_some() && self.config.use_as_system_proxy;
-        let active = self.system_proxy.is_applied();
+    fn resolve_hops(&self, config: &AppConfig) -> Result<Vec<Hop>, CommandError> {
+        let upstream = match config.upstream_mode {
+            UpstreamMode::Manual => config.upstream.clone(),
+            UpstreamMode::System => self.detect_system_proxy(config.listen_port)?,
+        };
+        let hops = vec![upstream, config.landing.clone()];
+        validate_chain(&hops)?;
+        Ok(hops)
+    }
+
+    async fn reconcile_system_proxy(&self) -> Result<(), CommandError> {
         let system_proxy = self.system_proxy.clone();
         let port = self.config.listen_port;
-        let task = if desired && (!active || reapply) {
-            let bypass = parse_bypass(&self.config)?;
+        let task = if self.server.is_some() && self.config.use_as_system_proxy {
+            let bypass = self.config.bypass_list()?;
             tokio::task::spawn_blocking(move || system_proxy.apply("127.0.0.1", port, &bypass))
-        } else if !desired && active {
+        } else if system_proxy.is_applied() {
             tokio::task::spawn_blocking(move || system_proxy.restore())
         } else {
             return Ok(());
@@ -164,23 +164,11 @@ impl Relay {
     }
 }
 
-fn validate(config: &AppConfig, allow_unfilled: bool) -> Result<(), CommandError> {
-    let hops = [&config.upstream, &config.landing];
-    for (index, hop) in hops.into_iter().enumerate() {
-        let skipped = (index == 0 && config.upstream_mode == UpstreamMode::System)
-            || (allow_unfilled && hop.host.trim().is_empty() && hop.port == 0);
-        if !skipped {
-            hop.validate().map_err(|error| CommandError::invalid_hop(index, error))?;
-        }
-    }
-    if config.listen_port == 0 {
-        return Err(CommandError::new("invalid_listen_port", "listen port is zero"));
+pub fn validate_chain(hops: &[Hop]) -> Result<(), CommandError> {
+    for (index, hop) in hops.iter().enumerate() {
+        hop.validate().map_err(|error| CommandError::invalid_hop(index, error))?;
     }
     Ok(())
-}
-
-fn parse_bypass(config: &AppConfig) -> Result<BypassList, CommandError> {
-    BypassList::parse(&config.bypass).map_err(|entry| CommandError::new("invalid_bypass", entry))
 }
 
 fn is_loopback(host: &str) -> bool {

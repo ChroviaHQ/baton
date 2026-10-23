@@ -24,26 +24,26 @@ pub(crate) enum InboundError {
     },
 }
 
-pub(crate) async fn serve(client: TcpStream, shared: Arc<ServerState>) -> Result<(), InboundError> {
+pub(crate) async fn serve(client: TcpStream, state: Arc<ServerState>) -> Result<(), InboundError> {
     let _ = client.set_nodelay(true);
     let mut first = [0u8; 1];
     if client.peek(&mut first).await? == 0 {
         return Ok(());
     }
     if first[0] == 0x05 {
-        socks5::serve(client, shared).await
+        socks5::serve(client, state).await
     } else {
-        http::serve(client, shared).await
+        http::serve(client, state).await
     }
 }
 
-async fn connect_target(shared: &ServerState, target: &TargetAddr) -> Result<TcpStream, DialError> {
+async fn connect_target(state: &ServerState, target: &TargetAddr) -> Result<TcpStream, DialError> {
     let stream = async {
-        if shared.bypass.matches(target) {
+        if state.bypass.matches(target) {
             dial_direct(target).await
         } else {
-            dial(&shared.hops, target).await
+            dial(&state.hops, target).await
         }
     };
-    tokio::time::timeout(shared.connect_timeout, stream).await.map_err(|_| DialError::Timeout)?
+    tokio::time::timeout(state.connect_timeout, stream).await.map_err(|_| DialError::Timeout)?
 }

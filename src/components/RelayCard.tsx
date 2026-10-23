@@ -1,7 +1,7 @@
 import { Globe, Laptop, Loader2, MapPin, Power, Server } from 'lucide-react';
 import type { ComponentType } from 'react';
 
-import type { AppConfig } from '../api';
+import type { AppConfig, Hop } from '../api';
 import { formatEndpoint, formatLocation } from '../format';
 import { t } from '../i18n';
 import { useStore } from '../store';
@@ -57,15 +57,15 @@ function TrackNode(
   );
 }
 
-function upstreamLabel(config: AppConfig): string {
-  if (config.upstreamMode === 'system') {
-    return t.followSystemShort;
-  }
-  const {host, port} = config.upstream;
+function endpointLabel({host, port}: Pick<Hop, 'host' | 'port'>): string {
   if (!host) {
     return '';
   }
   return LOOPBACK.has(host) ? `:${port}` : formatEndpoint(host, port);
+}
+
+function upstreamLabel(config: AppConfig): string {
+  return config.upstreamMode === 'system' ? t.followSystemShort : endpointLabel(config.upstream);
 }
 
 function TrackLine({active}: {active: boolean;}) {
@@ -86,13 +86,13 @@ function TrackLine({active}: {active: boolean;}) {
   );
 }
 
-export function RelayTrack() {
+export function RelayCard() {
   const {running, config} = useStore(s => s.status!);
   const busy = useStore(s => s.busy);
-  const probe = useStore(s => s.chainProbe);
+  const probe = useStore(s => s.egressProbe);
   const toggleRelay = useStore(s => s.toggleRelay);
   const openSheet = useStore(s => s.openSheet);
-  const probeChain = useStore(s => s.probeChain);
+  const probeEgress = useStore(s => s.probeEgress);
   const egress = probe?.status === 'succeeded'
     ? probe.value.ip
     : probe?.status === 'failed'
@@ -107,7 +107,7 @@ export function RelayTrack() {
           <TrackNode
             icon={Laptop}
             label={t.local}
-            value={`:${config.listenPort}`}
+            value={endpointLabel({host: 'localhost', port: config.listenPort})}
             active={running}
             title={t.editLocal}
             onClick={() => openSheet('local')}
@@ -123,7 +123,7 @@ export function RelayTrack() {
           <TrackNode
             icon={MapPin}
             label={t.landing}
-            value={config.landing.host}
+            value={endpointLabel(config.landing)}
             active={running}
             title={t.editLanding}
             onClick={() => openSheet('landing')}
@@ -143,7 +143,7 @@ export function RelayTrack() {
                 probe.value.org,
               ])
               : t.probeChainHint}
-            onClick={probeChain}
+            onClick={probeEgress}
           />
         </div>
       </div>

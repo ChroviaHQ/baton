@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { ErrorToast } from './components/ErrorToast';
 import { HopSheet } from './components/HopSheet';
 import { LocalSheet } from './components/LocalSheet';
-import { RelayTrack } from './components/RelayTrack';
+import { RelayCard } from './components/RelayCard';
 import { SettingsSheet } from './components/SettingsSheet';
 import { SystemProxyCard } from './components/SystemProxyCard';
 import { TitleBar } from './components/TitleBar';
@@ -37,7 +37,7 @@ export function App() {
       <TitleBar />
       {ready && (
         <main className='flex flex-1 flex-col gap-3 overflow-y-auto px-4.5 pb-4.5'>
-          <RelayTrack />
+          <RelayCard />
           <TrafficCard />
           <SystemProxyCard />
         </main>

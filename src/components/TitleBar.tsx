@@ -3,7 +3,7 @@ import { ArrowUpCircle, Loader2, Minus, Settings, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { api, type TitleBarMetrics } from '../api';
-import { format, t } from '../i18n';
+import { interpolate, t } from '../i18n';
 import { isMac } from '../platform';
 import { useStore } from '../store';
 import { Logo } from './Logo';
@@ -61,7 +61,7 @@ function UpdateButton({version}: {version: string;}) {
       {updating
         ? <Loader2 className='size-3.5 animate-spin' />
         : <ArrowUpCircle className='size-3.5' />}
-      {updating ? t.updating : format(t.updateTo, {version})}
+      {updating ? t.updating : interpolate(t.updateTo, {version})}
     </button>
   );
 }
@@ -82,7 +82,7 @@ function useTitleBarMetrics(): TitleBarMetrics | null {
 export function TitleBar() {
   const running = useStore(s => s.status?.running ?? false);
   const openSheet = useStore(s => s.openSheet);
-  const update = useStore(s => s.update);
+  const updateVersion = useStore(s => s.updateVersion);
   const metrics = useTitleBarMetrics();
   return (
     <header
@@ -102,7 +102,9 @@ export function TitleBar() {
         <span className='text-[13.5px] font-semibold tracking-tight'>Baton</span>
       </div>
       <div className='ml-auto flex items-center gap-1.5'>
-        {update ? <UpdateButton version={update} /> : <StatusPill running={running} />}
+        {updateVersion
+          ? <UpdateButton version={updateVersion} />
+          : <StatusPill running={running} />}
         <IconButton title={t.settings} onClick={() => openSheet('settings')}>
           <Settings className='size-3.75' />
         </IconButton>

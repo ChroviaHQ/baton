@@ -145,14 +145,14 @@ input {
   }
 }
 
+.sheet-up {
+  animation: sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 @keyframes sheet-fade {
   from {
     opacity: 0;
   }
-}
-
-.sheet-up {
-  animation: sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .sheet-fade {

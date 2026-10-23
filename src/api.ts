@@ -59,24 +59,24 @@ export const api = {
   startRelay: () => invoke<Status>('start_relay'),
   stopRelay: () => invoke<Status>('stop_relay'),
   saveConfig: (config: AppConfig) => invoke<Status>('save_config', {config}),
-  probe: (hops: Hop[]) => invoke<EgressInfo>('probe', {hops}),
+  probeEgress: (hops: Hop[]) => invoke<EgressInfo>('probe_egress', {hops}),
   detectSystemProxy: () => invoke<Hop>('detect_system_proxy'),
   getTitleBarMetrics: () => invoke<TitleBarMetrics | null>('get_title_bar_metrics'),
   takePendingError: () => invoke<CommandError | null>('take_pending_error'),
   getLaunchAtLogin: () => invoke<boolean>('get_launch_at_login'),
   setLaunchAtLogin: (enabled: boolean) => invoke<boolean>('set_launch_at_login', {enabled}),
-  pendingUpdate: () => invoke<string | null>('pending_update'),
+  getPendingUpdate: () => invoke<string | null>('get_pending_update'),
   installUpdate: () => invoke<void>('install_update'),
   onStatus: (handler: (status: Status) => void): Promise<UnlistenFn> =>
     listen<Status>('relay://status', event => handler(event.payload)),
   onStats: (handler: (stats: Stats) => void): Promise<UnlistenFn> =>
     listen<Stats>('relay://stats', event => handler(event.payload)),
   onUpdate: (handler: (version: string) => void): Promise<UnlistenFn> =>
-    listen<string>('relay://update', event => handler(event.payload)),
+    listen<string>('app://update', event => handler(event.payload)),
   onTitleBarMetrics: (handler: (metrics: TitleBarMetrics) => void): Promise<UnlistenFn> =>
     listen<TitleBarMetrics>('window://title-bar-metrics', event => handler(event.payload)),
   onError: (handler: (error: CommandError) => void): Promise<UnlistenFn> =>
-    listen<CommandError>('relay://error', event => handler(event.payload)),
+    listen<CommandError>('app://error', event => handler(event.payload)),
 };
 
 export async function resolveUpstream(config: AppConfig): Promise<Hop> {

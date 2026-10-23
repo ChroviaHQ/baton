@@ -1,14 +1,13 @@
 use std::time::Duration;
 
-use baton_core::{EgressInfo, Hop, probe_egress};
-use tauri::{AppHandle, State};
+use baton_core::{EgressInfo, Hop};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::RelayState;
 use crate::config::AppConfig;
 use crate::error::CommandError;
-use crate::events::{PendingError, publish};
-use crate::relay::Status;
+use crate::events::{PendingError, publish_status, report_error};
+use crate::relay::{RelayState, Status, validate_chain};
 use crate::update::PendingUpdate;
 use crate::window::{apply_dock_visibility, show_main_window};
 
@@ -26,7 +25,7 @@ pub async fn start_relay(
 ) -> Result<Status, CommandError> {
     let mut relay = state.lock().await;
     let result = relay.start().await;
-    publish(&app, &relay, result)
+    publish_status(&app, &relay, result)
 }
 
 #[tauri::command]
@@ -36,7 +35,31 @@ pub async fn stop_relay(
 ) -> Result<Status, CommandError> {
     let mut relay = state.lock().await;
     let result = relay.stop().await;
-    publish(&app, &relay, result)
+    publish_status(&app, &relay, result)
+}
+
+pub fn spawn_toggle_relay(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<RelayState>();
+        let mut relay = state.lock().await;
+        let result = if relay.is_running() { relay.stop().await } else { relay.start().await };
+        if let Err(error) = publish_status(&app, &relay, result) {
+            report_error(&app, error);
+        }
+    });
+}
+
+pub fn spawn_toggle_system_proxy(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<RelayState>();
+        let mut relay = state.lock().await;
+        let mut config = relay.config().clone();
+        config.use_as_system_proxy = !config.use_as_system_proxy;
+        let result = relay.apply_config(config).await;
+        if let Err(error) = publish_status(&app, &relay, result) {
+            report_error(&app, error);
+        }
+    });
 }
 
 #[tauri::command]
@@ -52,21 +75,21 @@ pub async fn save_config(
         apply_dock_visibility(&app, relay.config().show_in_dock);
         show_main_window(&app);
     }
-    publish(&app, &relay, result)
+    publish_status(&app, &relay, result)
 }
 
 #[tauri::command]
-pub async fn probe(hops: Vec<Hop>) -> Result<EgressInfo, CommandError> {
-    for (index, hop) in hops.iter().enumerate() {
-        hop.validate().map_err(|error| CommandError::invalid_hop(index, error))?;
-    }
-    probe_egress(&hops, PROBE_TIMEOUT).await.map_err(|error| CommandError::probe(error, hops.len()))
+pub async fn probe_egress(hops: Vec<Hop>) -> Result<EgressInfo, CommandError> {
+    validate_chain(&hops)?;
+    baton_core::probe_egress(&hops, PROBE_TIMEOUT)
+        .await
+        .map_err(|error| CommandError::probe(error, hops.len()))
 }
 
 #[tauri::command]
 pub async fn detect_system_proxy(state: State<'_, RelayState>) -> Result<Hop, CommandError> {
     let relay = state.lock().await;
-    relay.detect_upstream(relay.config().listen_port)
+    relay.detect_system_proxy(relay.config().listen_port)
 }
 
 #[cfg(target_os = "macos")]
@@ -98,7 +121,7 @@ pub fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<bool, Comman
 }
 
 #[tauri::command]
-pub fn pending_update(pending: State<'_, PendingUpdate>) -> Option<String> {
+pub fn get_pending_update(pending: State<'_, PendingUpdate>) -> Option<String> {
     pending.0.lock().ok()?.as_ref().map(|update| update.version.clone())
 }
 

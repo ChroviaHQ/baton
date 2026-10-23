@@ -2,8 +2,10 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use baton_core::{Hop, ProxyProtocol};
+use baton_core::{BypassList, Hop, ProxyProtocol};
 use serde::{Deserialize, Serialize};
+
+use crate::error::CommandError;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -72,5 +74,21 @@ impl AppConfig {
             fs::set_permissions(&temp, fs::Permissions::from_mode(0o600))?;
         }
         fs::rename(temp, path)
+    }
+
+    pub fn validate(&self) -> Result<(), CommandError> {
+        for (index, hop) in [&self.upstream, &self.landing].into_iter().enumerate() {
+            if !hop.host.trim().is_empty() || hop.port != 0 {
+                hop.validate().map_err(|error| CommandError::invalid_hop(index, error))?;
+            }
+        }
+        if self.listen_port == 0 {
+            return Err(CommandError::new("invalid_listen_port", "listen port is zero"));
+        }
+        Ok(())
+    }
+
+    pub fn bypass_list(&self) -> Result<BypassList, CommandError> {
+        BypassList::parse(&self.bypass).map_err(|entry| CommandError::new("invalid_bypass", entry))
     }
 }

@@ -4,14 +4,13 @@ use baton_core::StatsSnapshot;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::RelayState;
 use crate::error::CommandError;
-use crate::relay::{Relay, Status};
+use crate::relay::{Relay, RelayState, Status};
 use crate::tray::Tray;
 use crate::window::show_main_window;
 
 #[derive(Default)]
-pub(crate) struct PendingError(pub(crate) std::sync::Mutex<Option<CommandError>>);
+pub struct PendingError(pub std::sync::Mutex<Option<CommandError>>);
 
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,32 +21,28 @@ struct StatsEvent {
     down_rate: u64,
 }
 
-pub(crate) fn broadcast_status(app: &AppHandle, status: &Status) {
-    if let Some(tray) = app.try_state::<Tray>() {
-        tray.sync(app, status);
-    }
-    let _ = app.emit("relay://status", status);
-}
-
-pub(crate) fn publish(
+pub fn publish_status(
     app: &AppHandle,
     relay: &Relay,
     result: Result<(), CommandError>,
 ) -> Result<Status, CommandError> {
     let status = relay.status();
-    broadcast_status(app, &status);
+    if let Some(tray) = app.try_state::<Tray>() {
+        tray.sync(app, &status);
+    }
+    let _ = app.emit("relay://status", &status);
     result.map(|_| status)
 }
 
-pub(crate) fn report_error(app: &AppHandle, error: CommandError) {
+pub fn report_error(app: &AppHandle, error: CommandError) {
     if let Ok(mut pending) = app.state::<PendingError>().0.lock() {
         *pending = Some(error.clone());
     }
-    let _ = app.emit("relay://error", error);
+    let _ = app.emit("app://error", error);
     show_main_window(app);
 }
 
-pub(crate) fn spawn_stats_ticker(app: AppHandle) {
+pub fn spawn_stats_ticker(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         let mut previous: Option<(StatsSnapshot, Instant)> = None;

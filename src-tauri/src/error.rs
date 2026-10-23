@@ -1,5 +1,4 @@
-use baton_core::system_proxy::SystemProxyError;
-use baton_core::{DialError, HandshakeError, HopError, ProbeError};
+use baton_core::{DialError, HandshakeError, HopError, ProbeError, SystemProxyError};
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
@@ -24,7 +23,7 @@ impl CommandError {
     pub fn invalid_hop(hop: usize, error: HopError) -> Self {
         let code = match error {
             HopError::EmptyHost => "empty_host",
-            HopError::ZeroPort => "invalid_port",
+            HopError::InvalidPort => "invalid_port",
             HopError::CredentialsTooLong => "credentials_too_long",
         };
         Self::new(code, error).with_hop(hop)
@@ -40,10 +39,10 @@ impl CommandError {
 
     fn dial(error: DialError, hop_count: usize) -> Self {
         match error {
-            DialError::NoHops => Self::new("empty_chain", error),
+            DialError::EmptyChain => Self::new("empty_chain", error),
             DialError::Timeout => Self::new("timeout", error),
-            DialError::Unreachable(_) => Self::new("hop_unreachable", error).with_hop(0),
-            DialError::DirectUnreachable(_) => Self::new("unknown", error),
+            DialError::HopUnreachable(_) => Self::new("hop_unreachable", error).with_hop(0),
+            DialError::TargetUnreachable(_) => Self::new("target_unreachable", error),
             DialError::Handshake { hop, source } => Self::handshake(hop, source, hop_count),
         }
     }

@@ -49,16 +49,16 @@ type Store = {
   rateHistory: RateSample[];
   busy: boolean;
   error: CommandError | null;
-  chainProbe: AsyncState<EgressInfo> | null;
+  egressProbe: AsyncState<EgressInfo> | null;
   sheet: SheetId | null;
   sheetError: CommandError | null;
-  update: string | null;
+  updateVersion: string | null;
   init: () => Promise<() => void>;
   installUpdate: () => Promise<void>;
   toggleRelay: () => Promise<void>;
   saveConfig: (patch: Partial<AppConfig>) => Promise<CommandError | null>;
   setUseAsSystemProxy: (value: boolean) => Promise<void>;
-  probeChain: () => Promise<void>;
+  probeEgress: () => Promise<void>;
   openSheet: (sheet: SheetId) => void;
   closeSheet: () => void;
   setSheetError: (error: CommandError | null) => void;
@@ -92,10 +92,10 @@ export const useStore = create<Store>((set, get) => {
     rateHistory: Array.from({length: HISTORY_LENGTH}, () => ({up: 0, down: 0})),
     busy: false,
     error: null,
-    chainProbe: null,
+    egressProbe: null,
     sheet: null,
     sheetError: null,
-    update: null,
+    updateVersion: null,
 
     init: async () => {
       const unlisten = await Promise.all([
@@ -107,18 +107,18 @@ export const useStore = create<Store>((set, get) => {
           }];
           set({stats, rateHistory});
         }),
-        api.onUpdate(update => set({update})),
+        api.onUpdate(updateVersion => set({updateVersion})),
         api.onError(error => {
           report(error);
           void api.takePendingError();
         }),
       ]);
-      const [status, pending, update] = await Promise.all([
+      const [status, pending, updateVersion] = await Promise.all([
         api.getStatus(),
         api.takePendingError(),
-        api.pendingUpdate(),
+        api.getPendingUpdate(),
       ]);
-      set({status, update});
+      set({status, updateVersion});
       if (pending) {
         report(pending);
       }
@@ -147,7 +147,7 @@ export const useStore = create<Store>((set, get) => {
     saveConfig: async patch => {
       const error = await updateConfig(patch);
       if (!error) {
-        set({chainProbe: null});
+        set({egressProbe: null});
       }
       return error;
     },
@@ -159,19 +159,19 @@ export const useStore = create<Store>((set, get) => {
       }
     },
 
-    probeChain: async () => {
+    probeEgress: async () => {
       const {status} = get();
       if (!status) {
         return;
       }
-      set({chainProbe: {status: 'pending'}, error: null});
+      set({egressProbe: {status: 'pending'}, error: null});
       try {
         const upstream = await resolveUpstream(status.config);
-        const info = await api.probe([upstream, status.config.landing]);
-        set({chainProbe: {status: 'succeeded', value: info}});
+        const info = await api.probeEgress([upstream, status.config.landing]);
+        set({egressProbe: {status: 'succeeded', value: info}});
       } catch (raw) {
         const error = toCommandError(raw);
-        set({chainProbe: {status: 'failed', error}});
+        set({egressProbe: {status: 'failed', error}});
         report(error);
       }
     },

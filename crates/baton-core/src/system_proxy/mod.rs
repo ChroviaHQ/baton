@@ -45,6 +45,10 @@ impl ProxyEndpoints {
     }
 }
 
+fn domain_patterns(bypass: &BypassList) -> impl Iterator<Item = String> + '_ {
+    bypass.domains().iter().flat_map(|domain| [domain.clone(), format!("*.{domain}")])
+}
+
 #[derive(Clone, Debug)]
 pub struct SystemProxy {
     backup_path: PathBuf,
@@ -72,8 +76,7 @@ impl SystemProxy {
             let snapshot = platform::snapshot()?;
             fs::write(&self.backup_path, serde_json::to_vec_pretty(&snapshot)?)?;
         }
-        let entries: Vec<&str> = bypass.entries().iter().map(String::as_str).collect();
-        platform::apply(host, port, &entries)
+        platform::apply(host, port, bypass)
     }
 
     pub fn original_proxy(&self) -> Result<Option<Hop>, SystemProxyError> {

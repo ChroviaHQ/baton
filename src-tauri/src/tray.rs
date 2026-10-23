@@ -24,57 +24,57 @@ pub struct Tray {
     running_icon: Image<'static>,
 }
 
-pub fn build(app: &AppHandle, status: &Status) -> tauri::Result<Tray> {
-    let labels = labels();
-    let toggle = MenuItem::with_id(app, "toggle", &labels.start, true, None::<&str>)?;
-    let system_proxy = CheckMenuItem::with_id(
-        app,
-        "system_proxy",
-        &labels.system_proxy,
-        true,
-        status.config.use_as_system_proxy,
-        None::<&str>,
-    )?;
-    let check_update =
-        MenuItem::with_id(app, "check_update", &labels.check_update, true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", &labels.quit, true, None::<&str>)?;
-    let menu = Menu::with_items(
-        app,
-        &[&toggle, &system_proxy, &PredefinedMenuItem::separator(app)?, &check_update, &quit],
-    )?;
-
-    let idle_icon = Image::from_bytes(IDLE_ICON)?;
-    let running_icon = Image::from_bytes(RUNNING_ICON)?;
-    TrayIconBuilder::with_id("main")
-        .icon(idle_icon.clone())
-        .icon_as_template(ICON_IS_TEMPLATE)
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "toggle" => crate::spawn_toggle_relay(app.clone()),
-            "system_proxy" => crate::spawn_toggle_system_proxy(app.clone()),
-            "check_update" => crate::update::spawn_manual_update_check(app.clone()),
-            "quit" => app.exit(0),
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                crate::window::show_main_window(tray.app_handle());
-            }
-        })
-        .build(app)?;
-
-    let tray = Tray { toggle, system_proxy, check_update, idle_icon, running_icon };
-    tray.sync(app, status);
-    Ok(tray)
-}
-
 impl Tray {
+    pub fn new(app: &AppHandle, status: &Status) -> tauri::Result<Self> {
+        let labels = labels();
+        let toggle = MenuItem::with_id(app, "toggle", &labels.start, true, None::<&str>)?;
+        let system_proxy = CheckMenuItem::with_id(
+            app,
+            "system_proxy",
+            &labels.system_proxy,
+            true,
+            status.config.use_as_system_proxy,
+            None::<&str>,
+        )?;
+        let check_update =
+            MenuItem::with_id(app, "check_update", &labels.check_update, true, None::<&str>)?;
+        let quit = MenuItem::with_id(app, "quit", &labels.quit, true, None::<&str>)?;
+        let menu = Menu::with_items(
+            app,
+            &[&toggle, &system_proxy, &PredefinedMenuItem::separator(app)?, &check_update, &quit],
+        )?;
+
+        let idle_icon = Image::from_bytes(IDLE_ICON)?;
+        let running_icon = Image::from_bytes(RUNNING_ICON)?;
+        TrayIconBuilder::with_id("main")
+            .icon(idle_icon.clone())
+            .icon_as_template(ICON_IS_TEMPLATE)
+            .menu(&menu)
+            .show_menu_on_left_click(false)
+            .on_menu_event(|app, event| match event.id().as_ref() {
+                "toggle" => crate::commands::spawn_toggle_relay(app.clone()),
+                "system_proxy" => crate::commands::spawn_toggle_system_proxy(app.clone()),
+                "check_update" => crate::update::spawn_manual_update_check(app.clone()),
+                "quit" => app.exit(0),
+                _ => {}
+            })
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    crate::window::show_main_window(tray.app_handle());
+                }
+            })
+            .build(app)?;
+
+        let tray = Self { toggle, system_proxy, check_update, idle_icon, running_icon };
+        tray.sync(app, status);
+        Ok(tray)
+    }
+
     pub fn set_checking_update(&self, checking: bool) {
         let labels = labels();
         let _ = self.check_update.set_text(if checking {

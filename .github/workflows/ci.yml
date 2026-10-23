@@ -25,6 +25,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: npm ci
       - run: npm run build
-      - run: npm run checkFormatting
+      - run: npm run format:check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: npx tauri build --no-bundle

@@ -12,6 +12,16 @@ use crate::address::TargetAddr;
 use crate::dial::{DialError, dial};
 use crate::hop::Hop;
 
+#[derive(Debug, thiserror::Error)]
+pub enum ProbeError {
+    #[error(transparent)]
+    Dial(#[from] DialError),
+    #[error("lookup service failed: {0}")]
+    Lookup(String),
+    #[error("timed out")]
+    Timeout,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EgressInfo {
@@ -21,16 +31,6 @@ pub struct EgressInfo {
     pub city: String,
     pub org: String,
     pub latency_ms: u64,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ProbeError {
-    #[error(transparent)]
-    Dial(#[from] DialError),
-    #[error("lookup service failed: {0}")]
-    Lookup(String),
-    #[error("timed out")]
-    Timeout,
 }
 
 struct LookupService {

@@ -15,9 +15,9 @@ const FIRST_CHECK_DELAY: Duration = Duration::from_secs(30);
 const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
 #[derive(Default)]
-pub(crate) struct PendingUpdate(pub(crate) Mutex<Option<Update>>);
+pub struct PendingUpdate(pub Mutex<Option<Update>>);
 
-pub(crate) fn spawn_update_checker(app: AppHandle) {
+pub fn spawn_update_checker(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let start = tokio::time::Instant::now() + FIRST_CHECK_DELAY;
         let mut interval = tokio::time::interval_at(start, CHECK_INTERVAL);
@@ -30,7 +30,7 @@ pub(crate) fn spawn_update_checker(app: AppHandle) {
     });
 }
 
-pub(crate) fn spawn_manual_update_check(app: AppHandle) {
+pub fn spawn_manual_update_check(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let tray = app.state::<Tray>();
         tray.set_checking_update(true);
@@ -65,6 +65,6 @@ async fn check(app: &AppHandle) -> tauri_plugin_updater::Result<bool> {
     if let Ok(mut pending) = pending.0.lock() {
         *pending = Some(update);
     }
-    let _ = app.emit("relay://update", version);
+    let _ = app.emit("app://update", version);
     Ok(true)
 }

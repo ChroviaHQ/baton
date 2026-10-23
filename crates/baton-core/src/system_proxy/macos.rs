@@ -2,13 +2,14 @@ use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
-use super::{ProxyEndpoints, SystemProxyError};
+use super::{ProxyEndpoints, SystemProxyError, domain_patterns};
+use crate::bypass_list::{BypassList, Network};
 use crate::hop::Hop;
 
-const KINDS: [&str; 3] = ["webproxy", "securewebproxy", "socksfirewallproxy"];
+const PROXY_KINDS: [&str; 3] = ["webproxy", "securewebproxy", "socksfirewallproxy"];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Snapshot {
+pub(super) struct Snapshot {
     services: Vec<ServiceState>,
 }
 
@@ -27,11 +28,11 @@ struct ProxyState {
     port: u16,
 }
 
-pub fn snapshot() -> Result<Snapshot, SystemProxyError> {
+pub(super) fn snapshot() -> Result<Snapshot, SystemProxyError> {
     let mut services = Vec::new();
     for name in network_services()? {
-        let mut proxies = Vec::with_capacity(KINDS.len());
-        for kind in KINDS {
+        let mut proxies = Vec::with_capacity(PROXY_KINDS.len());
+        for kind in PROXY_KINDS {
             let output = networksetup(&[&format!("-get{kind}"), &name])?;
             proxies.push(parse_proxy_state(kind, &output));
         }
@@ -41,20 +42,22 @@ pub fn snapshot() -> Result<Snapshot, SystemProxyError> {
     Ok(Snapshot { services })
 }
 
-pub fn apply(host: &str, port: u16, bypass: &[&str]) -> Result<(), SystemProxyError> {
+pub(super) fn apply(host: &str, port: u16, bypass: &BypassList) -> Result<(), SystemProxyError> {
     let port = port.to_string();
+    let networks = bypass.networks().iter().map(network_pattern);
+    let entries: Vec<String> = domain_patterns(bypass).chain(networks).collect();
     for name in network_services()? {
-        for kind in KINDS {
+        for kind in PROXY_KINDS {
             networksetup(&[&format!("-set{kind}"), &name, host, &port])?;
         }
         let mut args = vec!["-setproxybypassdomains", name.as_str()];
-        args.extend_from_slice(bypass);
+        args.extend(entries.iter().map(String::as_str));
         networksetup(&args)?;
     }
     Ok(())
 }
 
-pub fn restore(snapshot: &Snapshot) -> Result<(), SystemProxyError> {
+pub(super) fn restore(snapshot: &Snapshot) -> Result<(), SystemProxyError> {
     let present = network_services()?;
     for service in &snapshot.services {
         if !present.contains(&service.name) {
@@ -84,7 +87,7 @@ pub fn restore(snapshot: &Snapshot) -> Result<(), SystemProxyError> {
     Ok(())
 }
 
-pub fn current() -> Result<Option<Hop>, SystemProxyError> {
+pub(super) fn current() -> Result<Option<Hop>, SystemProxyError> {
     let output = Command::new("/usr/sbin/scutil").arg("--proxy").output()?;
     if !output.status.success() {
         return Err(SystemProxyError::Command {
@@ -95,7 +98,7 @@ pub fn current() -> Result<Option<Hop>, SystemProxyError> {
     Ok(parse_scutil(&String::from_utf8_lossy(&output.stdout)).preferred_hop())
 }
 
-pub fn endpoints(snapshot: &Snapshot) -> ProxyEndpoints {
+pub(super) fn endpoints(snapshot: &Snapshot) -> ProxyEndpoints {
     for service in &snapshot.services {
         let endpoint = |kind: &str| {
             service
@@ -132,6 +135,14 @@ fn parse_scutil(output: &str) -> ProxyEndpoints {
         Some((host, port))
     };
     ProxyEndpoints { https: endpoint("HTTPS"), socks: endpoint("SOCKS"), http: endpoint("HTTP") }
+}
+
+fn network_pattern(network: &Network) -> String {
+    if network.is_host() {
+        network.ip().to_string()
+    } else {
+        format!("{}/{}", network.ip(), network.prefix_len())
+    }
 }
 
 fn network_services() -> Result<Vec<String>, SystemProxyError> {

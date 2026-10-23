@@ -9,19 +9,19 @@ struct Locale {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Labels {
-    pub(crate) start: String,
-    pub(crate) stop: String,
-    pub(crate) system_proxy: String,
-    pub(crate) check_update: String,
-    pub(crate) checking_update: String,
-    pub(crate) up_to_date: String,
-    pub(crate) quit: String,
-    pub(crate) running: String,
-    pub(crate) stopped: String,
+pub struct Labels {
+    pub start: String,
+    pub stop: String,
+    pub system_proxy: String,
+    pub check_update: String,
+    pub checking_update: String,
+    pub up_to_date: String,
+    pub quit: String,
+    pub running: String,
+    pub stopped: String,
 }
 
-pub(crate) fn labels() -> &'static Labels {
+pub fn labels() -> &'static Labels {
     static LABELS: OnceLock<Labels> = OnceLock::new();
     LABELS.get_or_init(|| {
         let locale = match sys_locale::get_locale() {

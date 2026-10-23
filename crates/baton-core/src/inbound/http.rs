@@ -25,7 +25,7 @@ const HOP_BY_HOP: &[&str] = &[
 
 pub(super) async fn serve(
     mut client: TcpStream,
-    shared: Arc<ServerState>,
+    state: Arc<ServerState>,
 ) -> Result<(), InboundError> {
     let mut buf = Vec::with_capacity(4096);
     let head_len = loop {
@@ -33,7 +33,7 @@ pub(super) async fn serve(
             break pos;
         }
         if buf.len() >= MAX_REQUEST_HEAD {
-            respond(&mut client, "431 Request Header Fields Too Large").await?;
+            reply(&mut client, "431 Request Header Fields Too Large").await?;
             return Err(InboundError::Protocol("HTTP request head is too large"));
         }
         let mut chunk = [0u8; 4096];
@@ -47,22 +47,22 @@ pub(super) async fn serve(
     let mut headers = [httparse::EMPTY_HEADER; 128];
     let mut request = httparse::Request::new(&mut headers);
     if !matches!(request.parse(&buf[..head_len]), Ok(httparse::Status::Complete(_))) {
-        respond(&mut client, "400 Bad Request").await?;
+        reply(&mut client, "400 Bad Request").await?;
         return Err(InboundError::Protocol("malformed HTTP request"));
     }
     let method = request.method.unwrap_or_default();
     let path = request.path.unwrap_or_default();
     let leftover = &buf[head_len..];
 
-    let (target, reply, prefix) = if method.eq_ignore_ascii_case("CONNECT") {
+    let (target, established, prefix) = if method.eq_ignore_ascii_case("CONNECT") {
         let Some(target) = TargetAddr::parse_authority(path, 443) else {
-            respond(&mut client, "400 Bad Request").await?;
+            reply(&mut client, "400 Bad Request").await?;
             return Err(InboundError::Protocol("invalid CONNECT authority"));
         };
         (target, Some(CONNECT_ESTABLISHED), leftover.to_vec())
     } else {
         let Some((target, origin_path)) = split_absolute_uri(path) else {
-            respond(&mut client, "400 Bad Request").await?;
+            reply(&mut client, "400 Bad Request").await?;
             return Err(InboundError::Protocol("HTTP proxy request is not absolute-form"));
         };
         let mut prefix = forwarded_head(&request, &origin_path, &target).into_bytes();
@@ -70,15 +70,15 @@ pub(super) async fn serve(
         (target, None, prefix)
     };
 
-    match connect_target(&shared, &target).await {
+    match connect_target(&state, &target).await {
         Ok(remote) => {
-            if let Some(reply) = reply {
-                client.write_all(reply).await?;
+            if let Some(established) = established {
+                client.write_all(established).await?;
             }
-            Ok(tunnel(client, remote, &shared.counters, &prefix).await?)
+            Ok(tunnel(client, remote, &state.counters, &prefix).await?)
         }
         Err(source) => {
-            respond(&mut client, http_status(&source)).await?;
+            reply(&mut client, dial_error_status(&source)).await?;
             Err(InboundError::Dial { target, source })
         }
     }
@@ -135,14 +135,14 @@ fn host_header(target: &TargetAddr) -> String {
     }
 }
 
-fn http_status(error: &DialError) -> &'static str {
+fn dial_error_status(error: &DialError) -> &'static str {
     match error {
         DialError::Timeout => "504 Gateway Timeout",
         _ => "502 Bad Gateway",
     }
 }
 
-async fn respond(client: &mut TcpStream, status: &str) -> io::Result<()> {
+async fn reply(client: &mut TcpStream, status: &str) -> io::Result<()> {
     let response = format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     client.write_all(response.as_bytes()).await
 }

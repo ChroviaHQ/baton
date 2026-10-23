@@ -32,8 +32,8 @@ pub struct StatsSnapshot {
 pub(crate) struct Counters {
     active: AtomicU64,
     failed: AtomicU64,
-    pub(crate) up: AtomicU64,
-    pub(crate) down: AtomicU64,
+    pub(crate) up_bytes: AtomicU64,
+    pub(crate) down_bytes: AtomicU64,
 }
 
 pub(crate) struct ServerState {
@@ -44,7 +44,7 @@ pub(crate) struct ServerState {
 }
 
 pub struct Server {
-    shared: Arc<ServerState>,
+    state: Arc<ServerState>,
     cancel: CancellationToken,
     task: Option<JoinHandle<()>>,
 }
@@ -53,25 +53,25 @@ impl Server {
     pub async fn start(config: ServerConfig) -> io::Result<Self> {
         let listener = TcpListener::bind(config.listen).await?;
         let local_addr = listener.local_addr()?;
-        let shared = Arc::new(ServerState {
+        let state = Arc::new(ServerState {
             hops: config.hops,
             bypass: config.bypass,
             connect_timeout: config.connect_timeout,
             counters: Counters::default(),
         });
         let cancel = CancellationToken::new();
-        let task = tokio::spawn(accept_loop(listener, shared.clone(), cancel.clone()));
+        let task = tokio::spawn(accept_loop(listener, state.clone(), cancel.clone()));
         tracing::info!(%local_addr, "listening");
-        Ok(Self { shared, cancel, task: Some(task) })
+        Ok(Self { state, cancel, task: Some(task) })
     }
 
     pub fn stats(&self) -> StatsSnapshot {
-        let counters = &self.shared.counters;
+        let counters = &self.state.counters;
         StatsSnapshot {
             active: counters.active.load(Ordering::Relaxed),
             failed: counters.failed.load(Ordering::Relaxed),
-            up_bytes: counters.up.load(Ordering::Relaxed),
-            down_bytes: counters.down.load(Ordering::Relaxed),
+            up_bytes: counters.up_bytes.load(Ordering::Relaxed),
+            down_bytes: counters.down_bytes.load(Ordering::Relaxed),
         }
     }
 
@@ -89,7 +89,7 @@ impl Drop for Server {
     }
 }
 
-async fn accept_loop(listener: TcpListener, shared: Arc<ServerState>, cancel: CancellationToken) {
+async fn accept_loop(listener: TcpListener, state: Arc<ServerState>, cancel: CancellationToken) {
     loop {
         let accepted = tokio::select! {
             _ = cancel.cancelled() => return,
@@ -103,14 +103,14 @@ async fn accept_loop(listener: TcpListener, shared: Arc<ServerState>, cancel: Ca
                 continue;
             }
         };
-        let shared = shared.clone();
+        let state = state.clone();
         let cancel = cancel.child_token();
         tokio::spawn(async move {
-            let counters = &shared.counters;
+            let counters = &state.counters;
             counters.active.fetch_add(1, Ordering::Relaxed);
             let result = tokio::select! {
                 _ = cancel.cancelled() => Ok(()),
-                result = inbound::serve(client, shared.clone()) => result,
+                result = inbound::serve(client, state.clone()) => result,
             };
             counters.active.fetch_sub(1, Ordering::Relaxed);
             if let Err(error) = result {
