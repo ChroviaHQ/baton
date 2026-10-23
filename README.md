@@ -15,6 +15,7 @@ Application ──► Baton (127.0.0.1:1080) ──► Upstream proxy ──► 
 - Accepts HTTP and SOCKS5 connections on a single local port.
 - Chains two hops over HTTP CONNECT or SOCKS5, with optional authentication on each hop.
 - Uses a fixed upstream address or the operating system's current proxy setting as the first hop.
+- Bypasses the chain for local, LAN, and user-specified addresses.
 - Optionally acts as the system proxy and restores the original settings when the relay stops.
 - Reports the egress IP address and live traffic statistics.
 
