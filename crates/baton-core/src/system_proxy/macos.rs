@@ -44,7 +44,7 @@ pub(super) fn snapshot() -> Result<Snapshot, SystemProxyError> {
 
 pub(super) fn apply(host: &str, port: u16, bypass: &BypassList) -> Result<(), SystemProxyError> {
     let port = port.to_string();
-    let networks = bypass.networks().iter().map(network_pattern);
+    let networks = bypass.networks().iter().filter_map(network_pattern);
     let entries: Vec<String> = domain_patterns(bypass).chain(networks).collect();
     for name in network_services()? {
         for kind in PROXY_KINDS {
@@ -137,11 +137,13 @@ fn parse_scutil(output: &str) -> ProxyEndpoints {
     ProxyEndpoints { https: endpoint("HTTPS"), socks: endpoint("SOCKS"), http: endpoint("HTTP") }
 }
 
-fn network_pattern(network: &Network) -> String {
+fn network_pattern(network: &Network) -> Option<String> {
     if network.is_host() {
-        network.ip().to_string()
+        Some(network.ip().to_string())
+    } else if network.ip().is_ipv4() {
+        Some(format!("{}/{}", network.ip(), network.prefix_len()))
     } else {
-        format!("{}/{}", network.ip(), network.prefix_len())
+        None
     }
 }
 
