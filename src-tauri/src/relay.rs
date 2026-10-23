@@ -60,6 +60,10 @@ impl Relay {
         self.server.as_ref().map(Server::stats)
     }
 
+    pub fn system_proxy(&self) -> &SystemProxy {
+        &self.system_proxy
+    }
+
     pub fn recover_system_proxy(&self) {
         if self.system_proxy.is_applied() {
             tracing::warn!("restoring system proxy left over from an unclean exit");
@@ -128,13 +132,6 @@ impl Relay {
             return Err(CommandError::new("system_proxy_is_baton", "system proxy points to Baton"));
         }
         Ok(hop)
-    }
-
-    pub fn shutdown_blocking(&mut self) {
-        if let Err(error) = self.system_proxy.restore() {
-            tracing::error!(%error, "cannot restore system proxy on exit");
-        }
-        self.server = None;
     }
 
     fn resolve_hops(&self, config: &AppConfig) -> Result<Vec<Hop>, CommandError> {

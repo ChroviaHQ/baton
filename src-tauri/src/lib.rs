@@ -8,6 +8,7 @@ mod tray;
 mod update;
 mod window;
 
+use baton_core::SystemProxy;
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
@@ -59,6 +60,7 @@ pub fn run() {
             apply_dock_visibility(app.handle(), relay.config().show_in_dock);
             let tray = Tray::new(app.handle(), &relay.status())?;
             app.manage(tray);
+            app.manage(relay.system_proxy().clone());
             app.manage::<RelayState>(Mutex::new(relay));
             app.manage(PendingError::default());
             app.manage(PendingUpdate::default());
@@ -84,8 +86,10 @@ pub fn run() {
 
     app.run(|app, event| match event {
         RunEvent::Exit => {
-            if let Some(state) = app.try_state::<RelayState>() {
-                state.blocking_lock().shutdown_blocking();
+            if let Some(system_proxy) = app.try_state::<SystemProxy>() {
+                if let Err(error) = system_proxy.restore() {
+                    tracing::error!(%error, "cannot restore system proxy on exit");
+                }
             }
         }
         #[cfg(target_os = "macos")]
