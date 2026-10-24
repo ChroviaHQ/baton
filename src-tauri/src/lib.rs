@@ -18,7 +18,7 @@ use crate::events::{PendingError, spawn_stats_ticker};
 use crate::relay::{Relay, RelayState};
 use crate::tray::Tray;
 use crate::update::{PendingUpdate, spawn_update_checker};
-use crate::window::{apply_dock_visibility, prepare_main_window, show_main_window};
+use crate::window::{apply_dock_visibility, create_main_window, show_main_window};
 
 const HIDDEN_ARG: &str = "--hidden";
 
@@ -66,7 +66,7 @@ pub fn run() {
             app.manage(PendingUpdate::default());
             spawn_stats_ticker(app.handle().clone());
             spawn_update_checker(app.handle().clone());
-            prepare_main_window(app.handle())?;
+            create_main_window(app.handle())?;
             if !std::env::args().any(|arg| arg == HIDDEN_ARG) {
                 show_main_window(app.handle());
             }

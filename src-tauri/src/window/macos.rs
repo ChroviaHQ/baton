@@ -1,28 +1,29 @@
-use tauri::{AppHandle, Manager};
+use objc2::MainThreadMarker;
+use objc2_app_kit::{NSWindow, NSWindowButton};
+use objc2_foundation::NSProcessInfo;
+use serde::Serialize;
+use tauri::utils::config::WindowConfig;
+use tauri::{ActivationPolicy, AppHandle, Emitter, WebviewWindow};
 
-pub fn show_main_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-        #[cfg(target_os = "macos")]
-        publish_title_bar_metrics(&window);
-    }
-}
+const MACOS_TAHOE_MAJOR_VERSION: isize = 26;
+const PRE_TAHOE_TRAFFIC_LIGHT_OFFSET: f64 = 4.0;
 
-#[cfg(target_os = "macos")]
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TitleBarMetrics {
     height: f64,
     controls_width: f64,
 }
 
-#[cfg(target_os = "macos")]
-pub fn title_bar_metrics(window: &tauri::WebviewWindow) -> Option<TitleBarMetrics> {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSWindow, NSWindowButton};
+pub(super) fn configure_main_window(config: &mut WindowConfig) {
+    if let Some(position) = &mut config.traffic_light_position {
+        if major_version() < MACOS_TAHOE_MAJOR_VERSION {
+            position.y -= PRE_TAHOE_TRAFFIC_LIGHT_OFFSET;
+        }
+    }
+}
 
+pub fn title_bar_metrics(window: &WebviewWindow) -> Option<TitleBarMetrics> {
     MainThreadMarker::new()?;
     let ns_window = unsafe { &*window.ns_window().ok()?.cast::<NSWindow>() };
     if !ns_window.isVisible() {
@@ -43,10 +44,7 @@ pub fn title_bar_metrics(window: &tauri::WebviewWindow) -> Option<TitleBarMetric
     })
 }
 
-#[cfg(target_os = "macos")]
-fn publish_title_bar_metrics(window: &tauri::WebviewWindow) {
-    use tauri::Emitter;
-
+pub(super) fn publish_title_bar_metrics(window: &WebviewWindow) {
     let target = window.clone();
     let _ = window.run_on_main_thread(move || {
         if let Some(metrics) = title_bar_metrics(&target) {
@@ -55,26 +53,8 @@ fn publish_title_bar_metrics(window: &tauri::WebviewWindow) {
     });
 }
 
-#[cfg(target_os = "macos")]
-pub fn prepare_main_window(_app: &AppHandle) -> tauri::Result<()> {
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn prepare_main_window(app: &AppHandle) -> tauri::Result<()> {
-    if let Some(window) = app.get_webview_window("main") {
-        let content_size = window.inner_size()?;
-        window.set_decorations(false)?;
-        window.set_size(content_size)?;
-        window.set_shadow(true)?;
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
 pub fn apply_dock_visibility(app: &AppHandle, visible: bool) {
-    let policy =
-        if visible { tauri::ActivationPolicy::Regular } else { tauri::ActivationPolicy::Accessory };
+    let policy = if visible { ActivationPolicy::Regular } else { ActivationPolicy::Accessory };
     let _ = app.set_activation_policy(policy);
     #[cfg(debug_assertions)]
     if visible {
@@ -82,19 +62,20 @@ pub fn apply_dock_visibility(app: &AppHandle, visible: bool) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn apply_dock_visibility(_app: &AppHandle, _visible: bool) {}
+fn major_version() -> isize {
+    NSProcessInfo::processInfo().operatingSystemVersion().majorVersion
+}
 
-#[cfg(all(target_os = "macos", debug_assertions))]
+#[cfg(debug_assertions)]
 fn restore_dev_dock_icon() {
-    use objc2::{AllocAnyThread, MainThreadMarker};
+    use objc2::AllocAnyThread;
     use objc2_app_kit::{NSApplication, NSImage};
     use objc2_foundation::NSData;
 
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
-    let data = NSData::with_bytes(include_bytes!("../icons/icon.png"));
+    let data = NSData::with_bytes(include_bytes!("../../icons/icon.png"));
     if let Some(icon) = NSImage::initWithData(NSImage::alloc(), &data) {
         unsafe { NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&icon)) };
     }
