@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::net::TcpStream;
 
 use crate::address::TargetAddr;
-use crate::dial::{DialError, dial, dial_direct};
+use crate::dial::{DialError, dial};
 use crate::server::ServerState;
 
 mod http;
@@ -38,12 +38,8 @@ pub(crate) async fn serve(client: TcpStream, state: Arc<ServerState>) -> Result<
 }
 
 async fn connect_target(state: &ServerState, target: &TargetAddr) -> Result<TcpStream, DialError> {
-    let stream = async {
-        if state.bypass.matches(target) {
-            dial_direct(target).await
-        } else {
-            dial(&state.hops, target).await
-        }
-    };
-    tokio::time::timeout(state.connect_timeout, stream).await.map_err(|_| DialError::Timeout)?
+    let hops = if state.bypass.matches(target) { &[][..] } else { &state.hops[..] };
+    tokio::time::timeout(state.connect_timeout, dial(hops, target))
+        .await
+        .map_err(|_| DialError::Timeout)?
 }

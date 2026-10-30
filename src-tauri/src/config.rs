@@ -77,8 +77,10 @@ impl AppConfig {
     }
 
     pub fn validate(&self) -> Result<(), CommandError> {
-        for (index, hop) in [&self.upstream, &self.landing].into_iter().enumerate() {
-            if !hop.host.trim().is_empty() || hop.port != 0 {
+        let upstream = (self.upstream_mode == UpstreamMode::Manual).then_some(&self.upstream);
+        for (index, hop) in [upstream, Some(&self.landing)].into_iter().enumerate() {
+            let is_set = |hop: &&Hop| !hop.host.trim().is_empty() || hop.port != 0;
+            if let Some(hop) = hop.filter(is_set) {
                 hop.validate().map_err(|error| CommandError::invalid_hop(index, error))?;
             }
         }

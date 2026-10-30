@@ -22,5 +22,3 @@ webpki-roots.workspace = true
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
 windows-sys = { version = "0.61", features = ["Win32_Networking_WinInet"] }
-
-

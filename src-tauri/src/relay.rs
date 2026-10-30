@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use baton_core::{BypassList, Hop, Server, ServerConfig, StatsSnapshot, SystemProxy};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::config::{AppConfig, UpstreamMode};
@@ -20,6 +20,18 @@ pub struct Status {
     pub config: AppConfig,
     pub running: bool,
     pub lan_ip: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HopRole {
+    Upstream,
+    Landing,
+}
+
+pub struct Chain {
+    pub hops: Vec<Hop>,
+    pub first_hop_index: usize,
 }
 
 pub struct Relay {
@@ -77,7 +89,7 @@ impl Relay {
         if self.server.is_none() {
             self.config.validate()?;
             let bypass = self.config.bypass_list()?;
-            let hops = self.resolve_hops(&self.config)?;
+            let hops = self.resolve_chain(&self.config, HopRole::Landing)?.hops;
             self.server = Some(start_server(&self.config, hops, bypass).await?);
         }
         self.reconcile_system_proxy().await
@@ -102,16 +114,16 @@ impl Relay {
                 || config.landing != self.config.landing);
         config.validate()?;
         let bypass = config.bypass_list()?;
-        let hops = restart.then(|| self.resolve_hops(&config)).transpose()?;
+        let chain = restart.then(|| self.resolve_chain(&config, HopRole::Landing)).transpose()?;
         config
             .save(&self.config_path)
             .map_err(|error| CommandError::new("config_save_failed", error))?;
         self.config = config;
-        if let Some(hops) = hops {
+        if let Some(chain) = chain {
             if let Some(server) = self.server.take() {
                 server.stop().await;
             }
-            match start_server(&self.config, hops, bypass).await {
+            match start_server(&self.config, chain.hops, bypass).await {
                 Ok(server) => self.server = Some(server),
                 Err(error) => {
                     let _ = self.reconcile_system_proxy().await;
@@ -122,26 +134,37 @@ impl Relay {
         self.reconcile_system_proxy().await
     }
 
-    pub fn detect_system_proxy(&self, listen_port: u16) -> Result<Hop, CommandError> {
-        let hop = self
+    pub fn detect_system_proxy(&self, listen_port: u16) -> Result<Option<Hop>, CommandError> {
+        let Some(hop) = self
             .system_proxy
             .original_proxy()
             .map_err(|error| CommandError::new("system_proxy_read_failed", error))?
-            .ok_or_else(|| CommandError::new("system_proxy_not_set", "no system proxy"))?;
+        else {
+            return Ok(None);
+        };
         if is_loopback(&hop.host) && hop.port == listen_port {
             return Err(CommandError::new("system_proxy_is_baton", "system proxy points to Baton"));
         }
-        Ok(hop)
+        Ok(Some(hop))
     }
 
-    fn resolve_hops(&self, config: &AppConfig) -> Result<Vec<Hop>, CommandError> {
+    pub fn resolve_chain(
+        &self,
+        config: &AppConfig,
+        through: HopRole,
+    ) -> Result<Chain, CommandError> {
         let upstream = match config.upstream_mode {
-            UpstreamMode::Manual => config.upstream.clone(),
+            UpstreamMode::Manual => Some(config.upstream.clone()),
             UpstreamMode::System => self.detect_system_proxy(config.listen_port)?,
         };
-        let hops = vec![upstream, config.landing.clone()];
-        validate_chain(&hops)?;
-        Ok(hops)
+        let first_hop_index = usize::from(upstream.is_none());
+        let landing = matches!(through, HopRole::Landing).then(|| config.landing.clone());
+        let hops: Vec<Hop> = upstream.into_iter().chain(landing).collect();
+        for (index, hop) in hops.iter().enumerate() {
+            hop.validate()
+                .map_err(|error| CommandError::invalid_hop(first_hop_index + index, error))?;
+        }
+        Ok(Chain { hops, first_hop_index })
     }
 
     async fn reconcile_system_proxy(&self) -> Result<(), CommandError> {
@@ -159,13 +182,6 @@ impl Relay {
             .map_err(|error| CommandError::new("system_proxy_failed", error))?
             .map_err(CommandError::from)
     }
-}
-
-pub fn validate_chain(hops: &[Hop]) -> Result<(), CommandError> {
-    for (index, hop) in hops.iter().enumerate() {
-        hop.validate().map_err(|error| CommandError::invalid_hop(index, error))?;
-    }
-    Ok(())
 }
 
 fn is_loopback(host: &str) -> bool {

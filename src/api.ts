@@ -5,6 +5,8 @@ export type ProxyProtocol = 'http' | 'socks5';
 
 export type UpstreamMode = 'manual' | 'system';
 
+export type HopRole = 'upstream' | 'landing';
+
 export type Hop = {
   protocol: ProxyProtocol;
   host: string;
@@ -59,8 +61,9 @@ export const api = {
   startRelay: () => invoke<Status>('start_relay'),
   stopRelay: () => invoke<Status>('stop_relay'),
   saveConfig: (config: AppConfig) => invoke<Status>('save_config', {config}),
-  probeEgress: (hops: Hop[]) => invoke<EgressInfo>('probe_egress', {hops}),
-  detectSystemProxy: () => invoke<Hop>('detect_system_proxy'),
+  probeEgress: (config: AppConfig, through: HopRole) =>
+    invoke<EgressInfo>('probe_egress', {config, through}),
+  detectSystemProxy: () => invoke<Hop | null>('detect_system_proxy'),
   getTitleBarMetrics: () => invoke<TitleBarMetrics | null>('get_title_bar_metrics'),
   takePendingError: () => invoke<CommandError | null>('take_pending_error'),
   getLaunchAtLogin: () => invoke<boolean>('get_launch_at_login'),
@@ -78,7 +81,3 @@ export const api = {
   onError: (handler: (error: CommandError) => void): Promise<UnlistenFn> =>
     listen<CommandError>('app://error', event => handler(event.payload)),
 };
-
-export async function resolveUpstream(config: AppConfig): Promise<Hop> {
-  return config.upstreamMode === 'system' ? api.detectSystemProxy() : config.upstream;
-}

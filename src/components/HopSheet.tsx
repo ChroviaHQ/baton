@@ -1,18 +1,17 @@
 import { Eye, EyeOff, Globe2, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import {
   api,
   type EgressInfo,
   type Hop,
+  type HopRole,
   type ProxyProtocol,
-  resolveUpstream,
-  toCommandError,
   type UpstreamMode,
 } from '../api';
 import { formatEndpoint, formatLocation, parsePort } from '../format';
 import { interpolate, t } from '../i18n';
-import { type AsyncState, type HopRole, useStore } from '../store';
+import { type AsyncState, settle, useStore } from '../store';
 import { Sheet } from './Sheet';
 import { Button, ErrorNote, IconButton, Segmented, TextField } from './ui';
 
@@ -33,7 +32,7 @@ const PLACEHOLDERS: Record<HopRole, {host: string; port: string;}> = {
   landing: {host: 'proxy.example.com', port: '8080'},
 };
 
-function DetectedProxy({detection}: {detection: AsyncState<Hop> | null;}) {
+function DetectedProxy({detection}: {detection: AsyncState<Hop | null> | null;}) {
   if (detection?.status === 'failed') {
     return <ErrorNote error={detection.error} />;
   }
@@ -42,7 +41,7 @@ function DetectedProxy({detection}: {detection: AsyncState<Hop> | null;}) {
       <div className='text-[11px] leading-4 text-muted'>{t.detectedProxy}</div>
       <div
         className={`flex h-lh items-center gap-2 text-[12px] leading-5 ${
-          detection?.status === 'pending' ? 'text-muted' : ''
+          detection?.status === 'succeeded' && detection.value ? '' : 'text-muted'
         }`}
       >
         {detection?.status === 'pending' && (
@@ -51,7 +50,8 @@ function DetectedProxy({detection}: {detection: AsyncState<Hop> | null;}) {
             {t.detecting}
           </>
         )}
-        {detection?.status === 'succeeded' && (
+        {detection?.status === 'succeeded' && !detection.value && t.noSystemProxy}
+        {detection?.status === 'succeeded' && detection.value && (
           <>
             <span className='rounded bg-accent-soft px-1.5 text-[10.5px] font-semibold text-accent'>
               {PROTOCOL_LABELS[detection.value.protocol]}
@@ -152,8 +152,10 @@ export function HopSheet({role}: {role: HopRole;}) {
   const isUpstream = role === 'upstream';
   const [hop, setHop] = useState<Hop>(config[role]);
   const [mode, setMode] = useState<UpstreamMode>(config.upstreamMode);
-  const [detection, setDetection] = useState<AsyncState<Hop> | null>(null);
+  const [detection, setDetection] = useState<AsyncState<Hop | null> | null>(null);
   const [probe, setProbe] = useState<AsyncState<EgressInfo> | null>(null);
+  const patch = isUpstream ? {upstreamMode: mode, upstream: hop} : {landing: hop};
+  const draft = {...config, ...patch};
   const followSystem = isUpstream && mode === 'system';
   const probing = probe?.status === 'pending';
 
@@ -161,35 +163,32 @@ export function HopSheet({role}: {role: HopRole;}) {
     setHop(current => ({...current, ...patch}));
     setProbe(null);
   };
-  const changeMode = (next: UpstreamMode) => {
-    setMode(next);
-    setProbe(null);
-  };
+
+  useEffect(() => setProbe(null), [config]);
+
+  const refreshDetection = useCallback(async () => {
+    const pending: AsyncState<Hop | null> = {status: 'pending'};
+    setDetection(pending);
+    const result = await settle(api.detectSystemProxy());
+    setDetection(current => current === pending ? result : current);
+  }, []);
 
   useEffect(() => {
-    if (!followSystem) {
-      return;
+    if (followSystem) {
+      void refreshDetection();
     }
-    setDetection({status: 'pending'});
-    api.detectSystemProxy().then(
-      value => setDetection({status: 'succeeded', value}),
-      raw => setDetection({status: 'failed', error: toCommandError(raw)}),
-    );
-  }, [followSystem]);
+    return () => setDetection(null);
+  }, [followSystem, refreshDetection]);
 
   const runProbe = async () => {
-    setProbe({status: 'pending'});
-    try {
-      const hops = isUpstream
-        ? [await resolveUpstream({...config, upstreamMode: mode, upstream: hop})]
-        : [await resolveUpstream(config), hop];
-      setProbe({status: 'succeeded', value: await api.probeEgress(hops)});
-    } catch (raw) {
-      setProbe({status: 'failed', error: toCommandError(raw)});
+    const pending: AsyncState<EgressInfo> = {status: 'pending'};
+    setProbe(pending);
+    if (followSystem) {
+      void refreshDetection();
     }
+    const state = await settle(api.probeEgress(draft, role));
+    setProbe(current => current === pending ? state : current);
   };
-
-  const save = () => saveConfig(isUpstream ? {upstreamMode: mode, upstream: hop} : {landing: hop});
 
   const protocolPicker = (
     <Segmented
@@ -203,11 +202,20 @@ export function HopSheet({role}: {role: HopRole;}) {
     <Sheet
       title={isUpstream ? t.upstreamTitle : t.landingTitle}
       hint={isUpstream ? (followSystem ? t.upstreamSystemHint : t.upstreamHint) : t.landingHint}
-      onSave={save}
+      onSave={() => saveConfig(patch)}
     >
       <div className='flex items-center justify-between'>
         {isUpstream
-          ? <Segmented value={mode} options={MODES} onChange={changeMode} />
+          ? (
+            <Segmented
+              value={mode}
+              options={MODES}
+              onChange={mode => {
+                setMode(mode);
+                setProbe(null);
+              }}
+            />
+          )
           : protocolPicker}
         <Button
           size='sm'

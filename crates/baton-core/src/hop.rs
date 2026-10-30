@@ -35,7 +35,7 @@ impl Hop {
         TargetAddr::new(self.host.trim(), self.port)
     }
 
-    pub fn credentials(&self) -> Option<(&str, &str)> {
+    pub(crate) fn credentials(&self) -> Option<(&str, &str)> {
         if self.username.is_empty() { None } else { Some((&self.username, &self.password)) }
     }
 

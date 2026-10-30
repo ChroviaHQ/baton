@@ -8,9 +8,7 @@ use crate::hop::Hop;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DialError {
-    #[error("no hops configured")]
-    EmptyChain,
-    #[error("cannot reach hop 1: {0}")]
+    #[error("cannot reach the first hop: {0}")]
     HopUnreachable(#[source] io::Error),
     #[error("hop {} failed: {source}", .hop + 1)]
     Handshake {
@@ -25,7 +23,9 @@ pub enum DialError {
 }
 
 pub(crate) async fn dial(hops: &[Hop], target: &TargetAddr) -> Result<TcpStream, DialError> {
-    let first = hops.first().ok_or(DialError::EmptyChain)?;
+    let Some(first) = hops.first() else {
+        return connect(target).await.map_err(DialError::TargetUnreachable);
+    };
     let mut stream = connect(&first.address()).await.map_err(DialError::HopUnreachable)?;
     for (index, hop) in hops.iter().enumerate() {
         let next = hops.get(index + 1).map_or_else(|| target.clone(), Hop::address);
@@ -34,10 +34,6 @@ pub(crate) async fn dial(hops: &[Hop], target: &TargetAddr) -> Result<TcpStream,
             .map_err(|source| DialError::Handshake { hop: index, source })?;
     }
     Ok(stream)
-}
-
-pub(crate) async fn dial_direct(target: &TargetAddr) -> Result<TcpStream, DialError> {
-    connect(target).await.map_err(DialError::TargetUnreachable)
 }
 
 async fn connect(target: &TargetAddr) -> io::Result<TcpStream> {

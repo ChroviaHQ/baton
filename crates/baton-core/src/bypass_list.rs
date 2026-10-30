@@ -11,6 +11,8 @@ const BUILTIN_ENTRIES: &[&str] = &[
     "172.16.0.0/12",
     "192.168.0.0/16",
     "169.254.0.0/16",
+    "fc00::/7",
+    "fe80::/10",
 ];
 
 #[derive(Debug)]
@@ -52,8 +54,8 @@ impl BypassList {
     pub(crate) fn matches(&self, target: &TargetAddr) -> bool {
         match target {
             TargetAddr::Ip(addr) => {
-                let bits = ip_bits(addr.ip().to_canonical());
-                self.networks.iter().any(|network| bits & network.mask == network.bits)
+                let ip = addr.ip().to_canonical();
+                self.networks.iter().any(|network| network.contains_ip(ip))
             }
             TargetAddr::Domain(host, _) => {
                 let host = host.trim_end_matches('.').to_ascii_lowercase();
@@ -108,10 +110,12 @@ impl Network {
         self.mask == u128::MAX
     }
 
+    fn contains_ip(&self, ip: IpAddr) -> bool {
+        self.ip.is_ipv4() == ip.is_ipv4() && ip_bits(ip) & self.mask == self.bits
+    }
+
     fn contains(&self, other: &Network) -> bool {
-        self.ip.is_ipv4() == other.ip.is_ipv4()
-            && other.mask & self.mask == self.mask
-            && other.bits & self.mask == self.bits
+        other.mask & self.mask == self.mask && self.contains_ip(other.ip)
     }
 }
 

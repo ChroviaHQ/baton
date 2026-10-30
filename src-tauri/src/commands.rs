@@ -7,7 +7,7 @@ use tauri_plugin_autostart::ManagerExt;
 use crate::config::AppConfig;
 use crate::error::CommandError;
 use crate::events::{PendingError, publish_status, report_error};
-use crate::relay::{RelayState, Status, validate_chain};
+use crate::relay::{HopRole, RelayState, Status};
 use crate::update::PendingUpdate;
 use crate::window::{apply_dock_visibility, show_main_window};
 
@@ -79,15 +79,21 @@ pub async fn save_config(
 }
 
 #[tauri::command]
-pub async fn probe_egress(hops: Vec<Hop>) -> Result<EgressInfo, CommandError> {
-    validate_chain(&hops)?;
-    baton_core::probe_egress(&hops, PROBE_TIMEOUT)
+pub async fn probe_egress(
+    state: State<'_, RelayState>,
+    config: AppConfig,
+    through: HopRole,
+) -> Result<EgressInfo, CommandError> {
+    let chain = state.lock().await.resolve_chain(&config, through)?;
+    baton_core::probe_egress(&chain.hops, PROBE_TIMEOUT)
         .await
-        .map_err(|error| CommandError::probe(error, hops.len()))
+        .map_err(|error| CommandError::probe(error, &chain))
 }
 
 #[tauri::command]
-pub async fn detect_system_proxy(state: State<'_, RelayState>) -> Result<Hop, CommandError> {
+pub async fn detect_system_proxy(
+    state: State<'_, RelayState>,
+) -> Result<Option<Hop>, CommandError> {
     let relay = state.lock().await;
     relay.detect_system_proxy(relay.config().listen_port)
 }

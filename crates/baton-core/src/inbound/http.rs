@@ -87,21 +87,17 @@ pub(super) async fn serve(
 fn forwarded_head(request: &httparse::Request, origin_path: &str, target: &TargetAddr) -> String {
     let method = request.method.unwrap_or_default();
     let mut head = format!("{method} {origin_path} HTTP/1.{}\r\n", request.version.unwrap_or(1));
-    let mut has_host = false;
     for header in request.headers.iter() {
         let name = header.name.to_ascii_lowercase();
-        if HOP_BY_HOP.contains(&name.as_str()) {
+        if name == "host" || HOP_BY_HOP.contains(&name.as_str()) {
             continue;
         }
-        has_host |= name == "host";
         head.push_str(header.name);
         head.push_str(": ");
         head.push_str(&String::from_utf8_lossy(header.value));
         head.push_str("\r\n");
     }
-    if !has_host {
-        head.push_str(&format!("Host: {}\r\n", host_header(target)));
-    }
+    head.push_str(&format!("Host: {}\r\n", host_header(target)));
     head.push_str("Connection: close\r\n\r\n");
     head
 }

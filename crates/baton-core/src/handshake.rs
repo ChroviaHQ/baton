@@ -125,7 +125,7 @@ where
 
     let mut reply = [0u8; 4];
     stream.read_exact(&mut reply).await?;
-    if reply[0] != 0x05 {
+    if reply[0] != 0x05 || reply[2] != 0x00 {
         return Err(HandshakeError::Malformed);
     }
     if reply[1] != 0x00 {
@@ -164,6 +164,9 @@ where
 
     let mut status = [0u8; 2];
     stream.read_exact(&mut status).await?;
+    if status[0] != 0x01 {
+        return Err(HandshakeError::Malformed);
+    }
     if status[1] != 0x00 {
         return Err(HandshakeError::AuthFailed);
     }

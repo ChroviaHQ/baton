@@ -1,6 +1,8 @@
 use baton_core::{DialError, HandshakeError, HopError, ProbeError, SystemProxyError};
 use serde::Serialize;
 
+use crate::relay::Chain;
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandError {
@@ -15,7 +17,7 @@ impl CommandError {
         Self { code, hop: None, detail: detail.to_string(), reply: None }
     }
 
-    pub fn with_hop(mut self, hop: usize) -> Self {
+    fn with_hop(mut self, hop: usize) -> Self {
         self.hop = Some(hop);
         self
     }
@@ -29,20 +31,20 @@ impl CommandError {
         Self::new(code, error).with_hop(hop)
     }
 
-    pub fn probe(error: ProbeError, hop_count: usize) -> Self {
-        match error {
-            ProbeError::Dial(error) => Self::dial(error, hop_count),
+    pub fn probe(error: ProbeError, chain: &Chain) -> Self {
+        let error = match error {
+            ProbeError::Dial(error) => Self::dial(error, chain.hops.len()),
             ProbeError::Timeout => Self::new("timeout", error),
             ProbeError::Lookup(reason) => Self::new("lookup_failed", reason),
-        }
+        };
+        Self { hop: error.hop.map(|hop| hop + chain.first_hop_index), ..error }
     }
 
     fn dial(error: DialError, hop_count: usize) -> Self {
         match error {
-            DialError::EmptyChain => Self::new("empty_chain", error),
             DialError::Timeout => Self::new("timeout", error),
             DialError::HopUnreachable(_) => Self::new("hop_unreachable", error).with_hop(0),
-            DialError::TargetUnreachable(_) => Self::new("target_unreachable", error),
+            DialError::TargetUnreachable(source) => Self::new("direct_unreachable", source),
             DialError::Handshake { hop, source } => Self::handshake(hop, source, hop_count),
         }
     }

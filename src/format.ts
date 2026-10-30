@@ -16,7 +16,8 @@ export function formatRate(value: number): string {
 }
 
 export function formatEndpoint(host: string, port: number): string {
-  return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
+  const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  return bare.includes(':') ? `[${bare}]:${port}` : `${bare}:${port}`;
 }
 
 export function formatLocation(parts: string[]): string {

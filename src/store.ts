@@ -5,7 +5,7 @@ import {
   type AppConfig,
   type CommandError,
   type EgressInfo,
-  resolveUpstream,
+  type HopRole,
   type Stats,
   type Status,
   toCommandError,
@@ -18,7 +18,14 @@ export type AsyncState<T> = {status: 'pending';} | {status: 'succeeded'; value: 
   error: CommandError;
 };
 
-export type HopRole = 'upstream' | 'landing';
+export function settle<T>(
+  promise: Promise<T>,
+): Promise<Exclude<AsyncState<T>, {status: 'pending';}>> {
+  return promise.then(
+    value => ({status: 'succeeded', value}),
+    raw => ({status: 'failed', error: toCommandError(raw)}),
+  );
+}
 
 export type SheetId = HopRole | 'local' | 'settings';
 
@@ -27,7 +34,6 @@ const SHEET_ERRORS: Record<string, SheetId> = {
   port_in_use: 'local',
   bind_failed: 'local',
   invalid_bypass: 'settings',
-  system_proxy_not_set: 'upstream',
   system_proxy_is_baton: 'upstream',
   system_proxy_read_failed: 'upstream',
 };
@@ -66,6 +72,10 @@ type Store = {
 };
 
 export const useStore = create<Store>((set, get) => {
+  const receiveStatus = (status: Status) => {
+    set({status, egressProbe: null});
+  };
+
   const report = (error: CommandError) => {
     const sheet = sheetFor(error);
     set(sheet ? {sheet, sheetError: error, error: null} : {error});
@@ -74,7 +84,8 @@ export const useStore = create<Store>((set, get) => {
   const runCommand = async (command: () => Promise<Status>): Promise<CommandError | null> => {
     set({busy: true});
     try {
-      set({status: await command(), error: null});
+      receiveStatus(await command());
+      set({error: null});
       return null;
     } catch (raw) {
       return toCommandError(raw);
@@ -99,7 +110,7 @@ export const useStore = create<Store>((set, get) => {
 
     init: async () => {
       const unlisten = await Promise.all([
-        api.onStatus(status => set({status})),
+        api.onStatus(receiveStatus),
         api.onStats(stats => {
           const rateHistory = [...get().rateHistory.slice(1), {
             up: stats.upRate,
@@ -118,7 +129,8 @@ export const useStore = create<Store>((set, get) => {
         api.takePendingError(),
         api.getPendingUpdate(),
       ]);
-      set({status, updateVersion});
+      receiveStatus(status);
+      set({updateVersion});
       if (pending) {
         report(pending);
       }
@@ -144,13 +156,7 @@ export const useStore = create<Store>((set, get) => {
       }
     },
 
-    saveConfig: async patch => {
-      const error = await updateConfig(patch);
-      if (!error) {
-        set({egressProbe: null});
-      }
-      return error;
-    },
+    saveConfig: updateConfig,
 
     setUseAsSystemProxy: async value => {
       const error = await updateConfig({useAsSystemProxy: value});
@@ -160,19 +166,19 @@ export const useStore = create<Store>((set, get) => {
     },
 
     probeEgress: async () => {
-      const {status} = get();
-      if (!status) {
+      const {status, egressProbe: current} = get();
+      if (!status || current?.status === 'pending') {
         return;
       }
-      set({egressProbe: {status: 'pending'}, error: null});
-      try {
-        const upstream = await resolveUpstream(status.config);
-        const info = await api.probeEgress([upstream, status.config.landing]);
-        set({egressProbe: {status: 'succeeded', value: info}});
-      } catch (raw) {
-        const error = toCommandError(raw);
-        set({egressProbe: {status: 'failed', error}});
-        report(error);
+      const pending: AsyncState<EgressInfo> = {status: 'pending'};
+      set({egressProbe: pending, error: null});
+      const egressProbe = await settle(api.probeEgress(status.config, 'landing'));
+      if (get().egressProbe !== pending) {
+        return;
+      }
+      set({egressProbe});
+      if (egressProbe.status === 'failed') {
+        report(egressProbe.error);
       }
     },
 

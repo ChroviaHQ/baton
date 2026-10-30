@@ -28,7 +28,7 @@ pub(super) async fn serve(
 
     let mut request = [0u8; 4];
     client.read_exact(&mut request).await?;
-    if request[0] != 0x05 {
+    if request[0] != 0x05 || request[2] != 0x00 {
         return Err(InboundError::Protocol("malformed SOCKS5 request"));
     }
     let target = match read_addr(&mut client, request[3]).await? {
@@ -98,6 +98,6 @@ fn dial_error_code(error: &DialError, hop_count: usize) -> u8 {
             0x05
         }
         DialError::Timeout | DialError::TargetUnreachable(_) => 0x04,
-        DialError::HopUnreachable(_) | DialError::Handshake { .. } | DialError::EmptyChain => 0x01,
+        DialError::HopUnreachable(_) | DialError::Handshake { .. } => 0x01,
     }
 }

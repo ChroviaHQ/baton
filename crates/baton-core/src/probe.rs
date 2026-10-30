@@ -49,6 +49,9 @@ pub async fn probe_egress(hops: &[Hop], timeout: Duration) -> Result<EgressInfo,
     for service in LOOKUP_SERVICES {
         match tokio::time::timeout(timeout, query(hops, service)).await {
             Ok(Ok(info)) => return Ok(info),
+            Ok(Err(error @ ProbeError::Dial(DialError::TargetUnreachable(_)))) => {
+                last = Some(error);
+            }
             Ok(Err(error @ ProbeError::Dial(_))) => return Err(error),
             Ok(Err(error)) => last = Some(error),
             Err(_) => last = Some(ProbeError::Timeout),
