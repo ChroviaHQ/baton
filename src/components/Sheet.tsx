@@ -44,7 +44,7 @@ export function Sheet(
     <div className='fixed inset-0 z-10 flex flex-col justify-end'>
       <div className='sheet-fade absolute inset-0 bg-black/35' onClick={closeSheet} />
       <form
-        className='sheet-up relative max-h-[88%] overflow-y-auto rounded-t-2xl border-t border-line bg-surface shadow-card'
+        className='sheet-up relative flex max-h-[88%] flex-col rounded-t-2xl border-t border-line bg-surface shadow-card'
         onSubmit={event => {
           event.preventDefault();
           void submit();
@@ -57,15 +57,17 @@ export function Sheet(
           </div>
           {hint && <p className='text-[11.5px] leading-snug text-muted'>{hint}</p>}
         </header>
-        <div className='flex flex-col gap-3 px-4 pt-3.5'>
+        <div className='flex min-h-0 flex-col gap-3 overflow-y-auto px-4 pt-3.5 pb-1'>
           {children}
-          {error && <ErrorNote error={error} />}
         </div>
-        <footer className='flex justify-end gap-2 p-4'>
-          <Button onClick={closeSheet}>{t.cancel}</Button>
-          <Button type='submit' variant='primary' loading={saving} disabled={saving}>
-            {t.save}
-          </Button>
+        <footer className='flex flex-col gap-3 px-4 pt-3 pb-4'>
+          {error && <ErrorNote error={error} />}
+          <div className='flex justify-end gap-2'>
+            <Button onClick={closeSheet}>{t.cancel}</Button>
+            <Button type='submit' variant='primary' loading={saving} disabled={saving}>
+              {t.save}
+            </Button>
+          </div>
         </footer>
       </form>
     </div>
