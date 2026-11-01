@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod error;
 mod events;
+mod lan;
 mod locale;
 mod relay;
 mod tray;
@@ -39,6 +40,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
+            commands::get_lan_addresses,
             commands::start_relay,
             commands::stop_relay,
             commands::save_config,

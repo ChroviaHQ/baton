@@ -1,5 +1,5 @@
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -19,7 +19,6 @@ pub type RelayState = Mutex<Relay>;
 pub struct Status {
     pub config: AppConfig,
     pub running: bool,
-    pub lan_ip: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -61,11 +60,7 @@ impl Relay {
     }
 
     pub fn status(&self) -> Status {
-        Status {
-            config: self.config.clone(),
-            running: self.is_running(),
-            lan_ip: lan_ip().map(|ip| ip.to_string()),
-        }
+        Status { config: self.config.clone(), running: self.is_running() }
     }
 
     pub fn stats(&self) -> Option<StatsSnapshot> {
@@ -191,13 +186,6 @@ fn is_loopback(host: &str) -> bool {
             .trim_end_matches(']')
             .parse::<IpAddr>()
             .is_ok_and(|ip| ip.is_loopback())
-}
-
-fn lan_ip() -> Option<IpAddr> {
-    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
-    socket.connect((Ipv4Addr::new(192, 0, 2, 1), 9)).ok()?;
-    let ip = socket.local_addr().ok()?.ip();
-    (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
 }
 
 async fn start_server(

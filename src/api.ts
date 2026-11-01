@@ -27,7 +27,9 @@ export type AppConfig = {
   bypass: string[];
 };
 
-export type Status = {config: AppConfig; running: boolean; lanIp: string | null;};
+export type LanAddress = {interface: string; ip: string;};
+
+export type Status = {config: AppConfig; running: boolean;};
 
 export type TitleBarMetrics = {height: number; controlsWidth: number;};
 
@@ -58,6 +60,7 @@ export function toCommandError(error: unknown): CommandError {
 
 export const api = {
   getStatus: () => invoke<Status>('get_status'),
+  getLanAddresses: () => invoke<LanAddress[]>('get_lan_addresses'),
   startRelay: () => invoke<Status>('start_relay'),
   stopRelay: () => invoke<Status>('stop_relay'),
   saveConfig: (config: AppConfig) => invoke<Status>('save_config', {config}),

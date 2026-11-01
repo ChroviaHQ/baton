@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { api, toCommandError } from '../api';
+import { api, type LanAddress, toCommandError } from '../api';
 import { formatEndpoint } from '../format';
 import { t } from '../i18n';
 import { isMac } from '../platform';
@@ -8,30 +8,40 @@ import { useStore } from '../store';
 import { Sheet } from './Sheet';
 import { CopyButton, TextField, ToggleRow } from './ui';
 
-function LanAddress({ip, port}: {ip: string | null; port: number;}) {
-  if (!ip) {
-    return <div className='text-[11.5px] text-muted'>{t.noLanIp}</div>;
+function LanAddresses({addresses, port}: {addresses: LanAddress[]; port: number;}) {
+  if (addresses.length === 0) {
+    return <div className='text-[11.5px] text-muted'>{t.noLanAddress}</div>;
   }
-  const address = formatEndpoint(ip, port);
   return (
-    <CopyButton value={address}>
-      <span className='flex-1 text-[11.5px] text-muted'>{t.lanAddress}</span>
-      <span className='font-mono text-[12px]'>{address}</span>
-    </CopyButton>
+    <div className='flex flex-col gap-1.5'>
+      {addresses.map(address => {
+        const endpoint = formatEndpoint(address.ip, port);
+        return (
+          <CopyButton key={`${address.interface} ${address.ip}`} value={endpoint}>
+            <span className='flex-1 truncate text-[11.5px] text-muted'>{address.interface}</span>
+            <span className='font-mono text-[12px]'>{endpoint}</span>
+          </CopyButton>
+        );
+      })}
+    </div>
   );
 }
 
 export function SettingsSheet() {
   const config = useStore(s => s.status!.config);
-  const lanIp = useStore(s => s.status!.lanIp);
   const saveConfig = useStore(s => s.saveConfig);
   const setSheetError = useStore(s => s.setSheetError);
   const [allowLan, setAllowLan] = useState(config.allowLan);
   const [showInDock, setShowInDock] = useState(config.showInDock);
   const [startOnLaunch, setStartOnLaunch] = useState(config.startOnLaunch);
   const [bypassText, setBypassText] = useState(config.bypass.join(', '));
+  const [lanAddresses, setLanAddresses] = useState<LanAddress[] | null>(null);
   const [launchAtLogin, setLaunchAtLogin] = useState<boolean | null>(null);
   const initialLaunchAtLogin = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    api.getLanAddresses().then(setLanAddresses);
+  }, []);
 
   useEffect(() => {
     api.getLaunchAtLogin().then(enabled => {
@@ -66,7 +76,9 @@ export function SettingsSheet() {
         checked={allowLan}
         onChange={setAllowLan}
       />
-      {allowLan && <LanAddress ip={lanIp} port={config.listenPort} />}
+      {allowLan && lanAddresses && (
+        <LanAddresses addresses={lanAddresses} port={config.listenPort} />
+      )}
       <ToggleRow
         title={t.launchAtLogin}
         hint={t.launchAtLoginHint}

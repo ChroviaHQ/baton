@@ -7,6 +7,7 @@ use tauri_plugin_autostart::ManagerExt;
 use crate::config::AppConfig;
 use crate::error::CommandError;
 use crate::events::{PendingError, publish_status, report_error};
+use crate::lan::{LanAddress, lan_addresses};
 use crate::relay::{HopRole, RelayState, Status};
 use crate::update::PendingUpdate;
 use crate::window::{apply_dock_visibility, show_main_window};
@@ -16,6 +17,11 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(12);
 #[tauri::command]
 pub async fn get_status(state: State<'_, RelayState>) -> Result<Status, CommandError> {
     Ok(state.lock().await.status())
+}
+
+#[tauri::command]
+pub async fn get_lan_addresses() -> Vec<LanAddress> {
+    lan_addresses()
 }
 
 #[tauri::command]
