@@ -103,6 +103,7 @@ impl Relay {
         let restart = self.server.is_some()
             && (config.listen_port != self.config.listen_port
                 || config.bypass != self.config.bypass
+                || config.bypass_china_domains != self.config.bypass_china_domains
                 || config.allow_lan != self.config.allow_lan
                 || config.upstream_mode != self.config.upstream_mode
                 || config.upstream != self.config.upstream

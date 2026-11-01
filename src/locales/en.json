@@ -58,6 +58,8 @@
   "showInDockHint": "When off, Baton appears only in the menu bar.",
   "startOnLaunch": "Start relay on launch",
   "startOnLaunchHint": "Begins relaying as soon as Baton opens.",
+  "bypassChinaDomains": "Direct connections for China domains",
+  "bypassChinaDomainsHint": "Connects to mainland China sites directly instead of through the chain.",
   "bypass": "Direct connections",
   "bypassHint": "Comma-separated domains, IPs or CIDRs. Local and LAN addresses are always direct.",
   "copy": "Copy",

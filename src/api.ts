@@ -25,6 +25,7 @@ export type AppConfig = {
   startOnLaunch: boolean;
   showInDock: boolean;
   bypass: string[];
+  bypassChinaDomains: boolean;
 };
 
 export type LanAddress = {interface: string; ip: string;};

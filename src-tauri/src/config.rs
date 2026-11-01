@@ -16,7 +16,7 @@ pub enum UpstreamMode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct AppConfig {
     pub upstream_mode: UpstreamMode,
     pub upstream: Hop,
@@ -27,6 +27,7 @@ pub struct AppConfig {
     pub start_on_launch: bool,
     pub show_in_dock: bool,
     pub bypass: Vec<String>,
+    pub bypass_china_domains: bool,
 }
 
 impl Default for AppConfig {
@@ -46,6 +47,7 @@ impl Default for AppConfig {
             start_on_launch: false,
             show_in_dock: false,
             bypass: Vec::new(),
+            bypass_china_domains: true,
         }
     }
 }
@@ -91,6 +93,8 @@ impl AppConfig {
     }
 
     pub fn bypass_list(&self) -> Result<BypassList, CommandError> {
-        BypassList::parse(&self.bypass).map_err(|entry| CommandError::new("invalid_bypass", entry))
+        let list = BypassList::parse(&self.bypass)
+            .map_err(|entry| CommandError::new("invalid_bypass", entry))?;
+        Ok(if self.bypass_china_domains { list.with_china_domains() } else { list })
     }
 }

@@ -34,6 +34,7 @@ export function SettingsSheet() {
   const [allowLan, setAllowLan] = useState(config.allowLan);
   const [showInDock, setShowInDock] = useState(config.showInDock);
   const [startOnLaunch, setStartOnLaunch] = useState(config.startOnLaunch);
+  const [bypassChinaDomains, setBypassChinaDomains] = useState(config.bypassChinaDomains);
   const [bypassText, setBypassText] = useState(config.bypass.join(', '));
   const [lanAddresses, setLanAddresses] = useState<LanAddress[] | null>(null);
   const [launchAtLogin, setLaunchAtLogin] = useState<boolean | null>(null);
@@ -55,6 +56,7 @@ export function SettingsSheet() {
       allowLan,
       showInDock,
       startOnLaunch,
+      bypassChinaDomains,
       bypass: bypassText.split(/[\s,]+/).filter(Boolean),
     });
     if (error || launchAtLogin === null || launchAtLogin === initialLaunchAtLogin.current) {
@@ -99,6 +101,12 @@ export function SettingsSheet() {
         hint={t.startOnLaunchHint}
         checked={startOnLaunch}
         onChange={setStartOnLaunch}
+      />
+      <ToggleRow
+        title={t.bypassChinaDomains}
+        hint={t.bypassChinaDomainsHint}
+        checked={bypassChinaDomains}
+        onChange={setBypassChinaDomains}
       />
       <TextField
         label={t.bypass}

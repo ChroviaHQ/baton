@@ -7,6 +7,10 @@ if (!/^\d+\.\d+\.\d+$/.test(version ?? '')) {
   process.exit(1);
 }
 
+const CHINA_DOMAINS_URL =
+  'https://raw.githubusercontent.com/ChroviaHQ/domain-list-community/release/cn.txt';
+const CHINA_DOMAINS_PATH = 'crates/baton-core/data/china-domains.txt';
+
 const run = (command, args) => execFileSync(command, args, {stdio: 'inherit'});
 
 const updateJson = (path, update) => {
@@ -19,6 +23,17 @@ if (execFileSync('git', ['status', '--porcelain'], {encoding: 'utf8'}).trim()) {
   console.error('Commit or stash your changes before releasing.');
   process.exit(1);
 }
+
+const chinaDomainList = execFileSync('curl', ['-fsSL', CHINA_DOMAINS_URL], {encoding: 'utf8'});
+const chinaDomains = new Set(
+  Array.from(chinaDomainList.matchAll(/^(?:domain|full):([^:\s]+)/gm), match =>
+    match[1].toLowerCase()),
+);
+if (chinaDomains.size === 0) {
+  console.error(`No China domains found at ${CHINA_DOMAINS_URL}.`);
+  process.exit(1);
+}
+writeFileSync(CHINA_DOMAINS_PATH, `${[...chinaDomains].sort().join('\n')}\n`);
 
 updateJson('package.json', json => {
   json.version = version;

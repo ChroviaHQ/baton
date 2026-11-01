@@ -1,6 +1,11 @@
+use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::LazyLock;
 
 use crate::address::TargetAddr;
+
+static CHINA_DOMAINS: LazyLock<HashSet<&str>> =
+    LazyLock::new(|| include_str!("../data/china-domains.txt").lines().collect());
 
 const BUILTIN_ENTRIES: &[&str] = &[
     "localhost",
@@ -19,6 +24,7 @@ const BUILTIN_ENTRIES: &[&str] = &[
 pub struct BypassList {
     domains: Vec<String>,
     networks: Vec<Network>,
+    includes_china_domains: bool,
 }
 
 impl BypassList {
@@ -40,7 +46,11 @@ impl BypassList {
                 return Err(entry.to_owned());
             }
         }
-        Ok(Self { domains, networks })
+        Ok(Self { domains, networks, includes_china_domains: false })
+    }
+
+    pub fn with_china_domains(self) -> Self {
+        Self { includes_china_domains: true, ..self }
     }
 
     pub(crate) fn domains(&self) -> &[String] {
@@ -60,6 +70,8 @@ impl BypassList {
             TargetAddr::Domain(host, _) => {
                 let host = host.trim_end_matches('.').to_ascii_lowercase();
                 self.domains.iter().any(|domain| domain_covers(domain, &host))
+                    || self.includes_china_domains
+                        && domain_suffixes(&host).any(|suffix| CHINA_DOMAINS.contains(suffix))
             }
         }
     }
@@ -121,6 +133,10 @@ impl Network {
 
 fn domain_covers(domain: &str, host: &str) -> bool {
     host == domain || host.strip_suffix(domain).is_some_and(|rest| rest.ends_with('.'))
+}
+
+fn domain_suffixes(host: &str) -> impl Iterator<Item = &str> {
+    std::iter::successors(Some(host), |suffix| suffix.split_once('.').map(|(_, parent)| parent))
 }
 
 fn parse_domain(entry: &str) -> Option<String> {
